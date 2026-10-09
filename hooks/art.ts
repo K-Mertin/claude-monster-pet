@@ -1,7 +1,7 @@
 // Draws the monster procedurally: a body, its line's features, eyes and mouth for its mood,
 // then an outline and shading. Every stage and line comes out in one consistent style.
 
-import type { Line, Stage } from './pet'
+import type { Hat, Line, Stage, Variant } from './pet'
 
 export type Rgb = number
 export type Sprite = { readonly w: number; readonly h: number; readonly px: readonly (Rgb | null)[] }
@@ -15,6 +15,13 @@ const SILVER = 0x94b0c2
 const RED = 0xe24b4a
 
 type Palette = { base: Rgb; dark: Rgb; light: Rgb }
+
+const SHADOW: Record<Line, Palette> = {
+  forge: { base: 0x8a3a3a, dark: 0x4a1a2a, light: 0xc96a4a },
+  scribe: { base: 0x4a3a6a, dark: 0x2a1a3a, light: 0x7a5aa0 },
+  summoner: { base: 0x2a4a7a, dark: 0x1a2a4a, light: 0x4a7aa0 },
+  wanderer: { base: 0x2a6a4a, dark: 0x1a3a2a, light: 0x5a9a6a },
+}
 
 const PALETTES: Record<Line | 'baby', Palette> = {
   baby: { base: 0x8fd694, dark: 0x3e8948, light: 0xc9f2b5 },
@@ -96,9 +103,10 @@ function egg(pose: Pose, cracked: boolean): Sprite {
   return g.sprite()
 }
 
-export function monster(stage: Stage, line: Line | null, pose: Pose, opts: { cracked?: boolean } = {}): Sprite {
+export function monster(stage: Stage, line: Line | null, pose: Pose, opts: { cracked?: boolean; variant?: Variant | null; hat?: Hat | null } = {}): Sprite {
   if (stage === 'egg') return egg(pose, opts.cracked ?? false)
-  const pal = PALETTES[stage === 'baby' || !line ? 'baby' : line]
+  const grown = stage === 'adult' || stage === 'ultimate'
+  const pal = line && grown && opts.variant === 'shadow' ? SHADOW[line] : PALETTES[stage === 'baby' || !line ? 'baby' : line]
   const g = new Grid(SIZE, SIZE)
   const { rx, ry: ry0 } = BODY[stage]
   const ry = pose.squash ? ry0 - 0.6 : ry0
@@ -189,7 +197,7 @@ export function monster(stage: Stage, line: Line | null, pose: Pose, opts: { cra
   }
   mouth(g, cx, Math.round(cy + ry * 0.3), line === 'wanderer' && stage !== 'baby' ? 'beak' : pose.mouth)
 
-  // Ultimate: an aura of sparkles and a crown.
+  // Ultimate: an aura of sparkles and a crown (unless it wears a hat).
   if (stage === 'ultimate') {
     const spots = pose.flicker ? [[2, 6], [21, 9], [4, 18], [20, 19]] : [[3, 10], [20, 5], [2, 15], [21, 16]]
     for (const [x, y] of spots) {
@@ -200,13 +208,28 @@ export function monster(stage: Stage, line: Line | null, pose: Pose, opts: { cra
       g.set(x!, y! - 1, 0xfff3c4)
       g.set(x!, y! + 1, 0xfff3c4)
     }
-    const y = top - 3
-    for (let i = -2; i <= 2; i++) g.set(cx + i, y + 2, GOLD)
-    for (const i of [-2, 0, 2]) g.set(cx + i, y + 1, GOLD)
-    g.set(cx, y, GOLD_DARK)
+    if (!opts.hat) {
+      const y = top - 3
+      for (let i = -2; i <= 2; i++) g.set(cx + i, y + 2, GOLD)
+      for (const i of [-2, 0, 2]) g.set(cx + i, y + 1, GOLD)
+      g.set(cx, y, GOLD_DARK)
+    }
+  }
+  if (grown && opts.variant === 'shadow' && (pose.eyes === 'open')) {
+    for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) if (g.get(x, y) === WHITE && y > top && y < cy) g.set(x, y, RED)
   }
 
   g.outline()
+  if (opts.hat) {
+    const h = HAT_SPRITES[opts.hat]
+    const off = HAT_OFFSET[opts.hat]
+    const hx = Math.round(cx - h.w / 2) + off[0]
+    const hy = top - h.h + 1 + off[1]
+    for (let j = 0; j < h.h; j++) for (let i = 0; i < h.w; i++) {
+      const c = h.px[j * h.w + i]
+      if (c !== null && c !== undefined) g.set(hx + i, hy + j, c)
+    }
+  }
   return g.sprite()
 }
 
@@ -339,4 +362,34 @@ export function crop(s: Sprite): Sprite {
   const px: (Rgb | null)[] = []
   for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) px.push(s.px[y * s.w + x] ?? null)
   return { w, h, px }
+}
+
+// ── Hats, each with its own outline, set on top of the head.
+const HAT_KEY = { k: INK, y: GOLD, p: PINK, r: RED, b: 0x3b5dc9, B: 0x41a6f6, w: WHITE, v: 0x9b59d0, s: SILVER, g: 0x38b764 }
+const HAT_SPRITES: Record<Hat, Sprite> = {
+  party: fromRows(['...k...', '..kyk..', '..kpk..', '.kypyk.', '.kpypk.', 'kkkkkkk'], HAT_KEY),
+  cap: fromRows(['.kkkkk...', 'kBBBBBk..', 'kBBwBBkkk', 'kbbbbbbbk', 'kkkkkkkkk'], HAT_KEY),
+  headphones: fromRows(['..kkkkkkk..', '.kssssssk..', 'kk.......kk', 'krk.....krk', 'krk.....krk', 'kk.......kk'], HAT_KEY),
+  wizard: fromRows(['.....k..', '....kvk.', '...kvvk.', '...kvyk.', '..kvvvvk', '.kvvvvvvk', 'kyyyyyyyyk', 'kkkkkkkkkk'], HAT_KEY),
+  flower: fromRows(['.k.k.', 'kpkpk', '.kyk.', 'kpkpk', '.k.k.'], HAT_KEY),
+  bow: fromRows(['kk...kk', 'krk.krk', 'krrkrrk', 'krk.krk', 'kk...kk'], HAT_KEY),
+  beanie: fromRows(['...kk...', '..kwwk..', '.kbbbbk.', 'kbBbBbbk', 'kwwwwwwk', 'kkkkkkkk'], HAT_KEY),
+  halo: fromRows(['.kkkkk.', 'kyyyyyk', '.kkkkk.', '.......', '.......'], HAT_KEY),
+}
+const HAT_OFFSET: Record<Hat, [number, number]> = {
+  party: [0, 0], cap: [1, 1], headphones: [0, 4], wizard: [0, 1], flower: [3, 1], bow: [3, 1], beanie: [0, 2], halo: [0, -2],
+}
+
+export function hatIcon(hat: Hat): Sprite {
+  return HAT_SPRITES[hat]
+}
+
+export function mess(): Sprite {
+  return fromRows(['..k..', '.kwk.', 'kwwwk', 'kkkkk'], { k: INK, w: 0x8a5a3a })
+}
+export function bush(): Sprite {
+  return fromRows(['..kkkkk...', '.kgggggkk.', 'kggGgggggk', 'kgggggGggk', 'kGgggggggk', '.kkkkkkkk.'], { k: INK, g: 0x38b764, G: 0xa7f070 })
+}
+export function cookie(): Sprite {
+  return fromRows(['.kkk.', 'kyoyk', 'koyok', 'kyoyk', '.kkk.'], { k: INK, y: GOLD, o: 0x8a5a3a })
 }

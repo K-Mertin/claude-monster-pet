@@ -5,8 +5,20 @@ export type Stage = 'egg' | 'baby' | 'child' | 'adult' | 'ultimate'
 /** The evolution line, chosen by how you work when it grows into a child. */
 export type Line = 'forge' | 'scribe' | 'summoner' | 'wanderer'
 
+/** Chosen by how well it was cared for when it grows into an adult. */
+export type Variant = 'bright' | 'shadow'
+
+export type Personality = 'cheerful' | 'lazy' | 'curious' | 'grumpy'
+
+/** Treats earned from your work. */
+export type Item = 'cookie' | 'coffee' | 'gem' | 'bug'
+
+export type Hat = 'party' | 'cap' | 'headphones' | 'wizard' | 'flower' | 'bow' | 'beanie' | 'halo'
+
+export type Skill = 'power' | 'wisdom' | 'speed'
+
 export type Mood = {
-  kind: 'cheer' | 'ouch' | 'eat' | 'full' | 'tired' | 'love' | 'evolve'
+  kind: 'cheer' | 'ouch' | 'eat' | 'full' | 'tired' | 'love' | 'evolve' | 'wave' | 'sweat' | 'win' | 'lose' | 'talk'
   until: number
 }
 
@@ -16,28 +28,57 @@ export type Pet = {
   updatedAt: number
   /** The last time anything happened in any session. */
   lastActive: number
+  personality: Personality
   stage: Stage
   line: Line | null
+  variant: Variant | null
   xp: number
   /** 0–100: 100 is full. */
   hunger: number
   joy: number
   stress: number
+  energy: number
+  /** Tucked in: asleep until then. */
+  asleepUntil?: number
+  /** Droppings after meals, 0–3. */
+  mess: number
+  skills: Record<Skill, number>
+  items: Record<Item, number>
+  hat: Hat | null
+  hats: Hat[]
+  badges: string[]
+  streak: { days: number; lastDay: string }
+  /** Joy sampled while active, for the adult variant. */
+  care: { sum: number; n: number }
   traits: { shell: number; code: number; agents: number; web: number }
-  stats: { tokens: number; tests: number; commits: number; tasks: number; errors: number; fed: number; played: number }
-  cooldowns: { feed?: number; play?: number }
+  stats: {
+    tokens: number; tests: number; commits: number; pushes: number; tasks: number; errors: number
+    fed: number; meals: number; played: number; pats: number; talks: number
+    games: number; wins: number; trained: number; cleaned: number; agents: number
+    lastTestFailed?: boolean
+  }
+  cooldowns: { feed?: number; play?: number; train?: number; game?: number }
   mood?: Mood
+  said?: { text: string; at: number }
   log: { at: number; text: string }[]
 }
 
 /** Something that happened in a session, waiting to be applied to the shared pet. */
 export type Event =
   | { kind: 'tokens'; n: number; at: number }
-  | { kind: 'tool'; tool: string; command?: string; failed: boolean; at: number }
+  | { kind: 'tool'; tool: string; command?: string; failed: boolean; ms?: number; at: number }
   | { kind: 'task'; n: number; at: number }
+  | { kind: 'agent'; at: number }
   | { kind: 'feed'; at: number }
   | { kind: 'play'; at: number }
   | { kind: 'pet'; at: number }
+  | { kind: 'talk'; text: string; at: number }
+  | { kind: 'clean'; at: number }
+  | { kind: 'tuck'; at: number }
+  | { kind: 'use'; item: Item; at: number }
+  | { kind: 'game'; won: boolean; prize?: Item; at: number }
+  | { kind: 'train'; skill: Skill; at: number }
+  | { kind: 'equip'; hat: Hat | null; at: number }
   | { kind: 'rename'; name: string; at: number }
 
 declare module 'claude-code' {
@@ -45,6 +86,8 @@ declare module 'claude-code' {
     monster: {
       pet: Pet | null
       isHidden: boolean
+      tab: 'home' | 'items' | 'games' | 'style' | 'badges'
+      hunt: { round: number; score: number; treat: number; picked: number | null } | null
     }
   }
 }

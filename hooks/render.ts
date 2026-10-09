@@ -1,11 +1,9 @@
 // Turns the pet into animation frames, and frames into an SVG (desktop) or cells (terminal).
 
-import { SIZE, ball, bowl, heart, monster, note, star, sweat, zz, type Pose, type Rgb, type Sprite } from './art'
-import { face, type Pet } from './pet'
+import { SIZE, ball, bowl, bush, cookie, heart, mess, monster, note, star, sweat, zz, type Pose, type Rgb, type Sprite } from './art'
+import { face, type Face, type Pet } from './pet'
 
 export const FRAME_MS = 260
-
-type Face = ReturnType<typeof face>
 
 function poses(f: Face): { pose: Pose; dy: number }[] {
   const p = (eyes: Pose['eyes'], mouth: Pose['mouth'], squash = false, flicker = false, dy = 0) => ({ pose: { eyes, mouth, squash, flicker }, dy })
@@ -32,6 +30,18 @@ function poses(f: Face): { pose: Pose; dy: number }[] {
       return [p('open', 'frown'), p('open', 'frown', false, true), p('open', 'frown'), p('closed', 'frown', false, true)]
     case 'happy':
       return [p('open', 'smile'), p('open', 'smile', false, true, -1), p('open', 'smile'), p('closed', 'smile', false, true)]
+    case 'wave':
+      return [p('happy', 'open', false, false, -1), p('happy', 'smile', false, true), p('happy', 'open', false, false, -1), p('happy', 'smile', false, true)]
+    case 'sweat':
+      return [p('closed', 'flat', true), p('closed', 'open', false, true, -1), p('closed', 'flat', true), p('closed', 'open', false, true, -1)]
+    case 'win':
+      return [p('happy', 'open', true), p('happy', 'open', false, true, -4), p('happy', 'open', false, false, -2), p('happy', 'smile', true, true)]
+    case 'lose':
+      return [p('closed', 'frown'), p('closed', 'frown', true, true), p('open', 'frown'), p('closed', 'frown', true, true)]
+    case 'talk':
+      return [p('open', 'open'), p('open', 'smile', false, true), p('open', 'open'), p('open', 'flat', false, true)]
+    case 'sleepy':
+      return [p('closed', 'flat'), p('closed', 'o', false, true), p('closed', 'flat'), p('open', 'flat', false, true)]
   }
 }
 
@@ -58,7 +68,7 @@ export function petFrames(p: Pet, now: number): Sprite[] {
   const H = SIZE + pad
   return poses(f).map(({ pose, dy }) => {
     const px = blank(SIZE, H)
-    stamp(px, SIZE, H, monster(p.stage, p.line, pose, { cracked: hatching }), 0, pad + dy)
+    stamp(px, SIZE, H, monster(p.stage, p.line, pose, { cracked: hatching, variant: p.variant, hat: p.hat }), 0, pad + dy)
     return { w: SIZE, h: H, px }
   })
 }
@@ -103,9 +113,12 @@ function sky(hour: number): [Rgb, Rgb] {
   return [0x29366f, 0x3b5dc9]
 }
 
-export function habitatFrames(p: Pet, now: number, hour: number): Sprite[] {
-  const [top, bottom] = sky(hour)
-  const night = hour < 6 || hour >= 20
+export type Hunt = { round: number; score: number; treat: number; picked: number | null }
+
+export function habitatFrames(p: Pet, now: number, hour: number, hunt?: Hunt | null): Sprite[] {
+  const tucked = (p.asleepUntil ?? 0) > now
+  const [top, bottom] = tucked ? [0x1a1c2c, 0x29366f] as [Rgb, Rgb] : sky(hour)
+  const night = tucked || hour < 6 || hour >= 20
   const f = face(p, now)
   const base = blank(HAB_W, HAB_H)
   for (let y = 0; y < HAB_H; y++) for (let x = 0; x < HAB_W; x++) base[y * HAB_W + x] = y < 14 ? top : y < 28 ? bottom : 0x3e8948
@@ -127,6 +140,18 @@ export function habitatFrames(p: Pet, now: number, hour: number): Sprite[] {
   stamp(base, HAB_W, HAB_H, bowl(full || p.hunger > 70), 10, 31)
   if ((p.cooldowns.play ?? 0) > now - 10 * 60_000 && p.stats.played > 0) stamp(base, HAB_W, HAB_H, ball(), 56, 32)
 
+  // Messes after meals.
+  for (let i = 0; i < p.mess; i++) stamp(base, HAB_W, HAB_H, mess(), 20 + i * 6, 34 - (i % 2))
+  // The treat hunt: three bushes, one hiding a cookie once a guess is made.
+  if (hunt) {
+    for (let b = 0; b < 3; b++) {
+      const bx = 8 + b * 22
+      stamp(base, HAB_W, HAB_H, bush(), bx, 22)
+      if (hunt.picked !== null && b === hunt.treat) stamp(base, HAB_W, HAB_H, cookie(), bx + 2, 17)
+      if (hunt.picked === b && b !== hunt.treat) for (let i = 0; i < 3; i++) base[(19 + i) * HAB_W + bx + 4 + i] = 0xe24b4a
+    }
+  }
+
   const frames = petFrames(p, now)
   const px0 = Math.round(HAB_W / 2 - SIZE / 2)
   const py0 = HAB_H - frames[0]!.h - 4
@@ -137,11 +162,13 @@ export function habitatFrames(p: Pet, now: number, hour: number): Sprite[] {
     stamp(px, HAB_W, HAB_H, s, px0, py0)
     const fx = px0 + SIZE - 2
     const fy = py0 + 2 - (i % 2)
-    if (f === 'sleep') stamp(px, HAB_W, HAB_H, zz(), fx + (i % 2), fy - i)
+    if (f === 'sleep' || f === 'sleepy') stamp(px, HAB_W, HAB_H, zz(), fx + (i % 2), fy - i)
     else if (f === 'love') stamp(px, HAB_W, HAB_H, heart(), fx, fy - i)
     else if (f === 'cheer') stamp(px, HAB_W, HAB_H, note(), fx + (i % 2) * 2, fy - i)
     else if (f === 'evolve') for (const [x, y] of [[px0, py0 + 4 + i], [px0 + SIZE, py0 + 8 - i], [px0 + 4, py0 - i]] as const) stamp(px, HAB_W, HAB_H, star(), x, y)
-    else if (f === 'ouch' || f === 'sick') stamp(px, HAB_W, HAB_H, sweat(), px0 + 4, py0 + 6 + (i % 2))
+    else if (f === 'ouch' || f === 'sick' || f === 'sweat' || f === 'lose') stamp(px, HAB_W, HAB_H, sweat(), px0 + 4, py0 + 6 + (i % 2))
+    else if (f === 'win') for (const [x, y] of [[px0 + 2, py0 + 2 - i], [px0 + SIZE - 4, py0 + 4 - i]] as const) stamp(px, HAB_W, HAB_H, heart(), x, y)
+    else if (f === 'wave') stamp(px, HAB_W, HAB_H, star(), fx + (i % 2), fy)
     return { w: HAB_W, h: HAB_H, px }
   })
 }
