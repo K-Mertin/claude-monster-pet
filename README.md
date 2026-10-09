@@ -7,7 +7,7 @@ A Claude Code mod that hatches a pixel-art digital monster and raises it from yo
 In a Claude Code terminal session (Claude Code 2.1.287 or later):
 
 ```
-/plugin install monster --marketplace OWNER/claude-monster-pet
+/plugin install monster --marketplace K-Mertin/claude-monster-pet
 ```
 
 Answer `y` to add the marketplace, then pick a scope. The egg appears above your prompt.

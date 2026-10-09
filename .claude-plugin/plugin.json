@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "description": "Raise a digital monster that grows from your Claude Code work",
   "author": {
-    "name": "mertin"
+    "name": "K-Mertin"
   },
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "repository": "https://github.com/K-Mertin/claude-monster-pet"
 }

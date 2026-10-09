@@ -1,7 +1,9 @@
 {
   "name": "claude-monster-pet",
   "description": "A digital monster you raise with your Claude Code work",
-  "owner": { "name": "mertin" },
+  "owner": {
+    "name": "K-Mertin"
+  },
   "plugins": [
     {
       "name": "monster",
