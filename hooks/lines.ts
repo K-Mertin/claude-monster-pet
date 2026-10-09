@@ -41,7 +41,7 @@ const LINE_TALK: Record<string, Pool> = {
 }
 
 const FLAVOR: Record<Pet['personality'], (s: string) => string> = {
-  cheerful: s => (s.endsWith('!') ? s : s.replace(/[.?]$/, '') + '!'),
+  cheerful: s => (s.endsWith('!') || s.endsWith('?') ? s : s.replace(/\.$/, '') + '!'),
   lazy: s => `*yawn* ${s.charAt(0).toLowerCase()}${s.slice(1)}`,
   curious: s => (s.endsWith('?') ? s : `${s} …what are you working on?`),
   grumpy: s => `Hmph. ${s}`,
