@@ -49,6 +49,8 @@ export function normalize(raw: Partial<Pet>): Pet {
     cooldowns: { ...raw.cooldowns },
     mood: raw.mood,
     said: raw.said,
+    settings: { sound: false, alerts: true, ...raw.settings },
+    alerted: { ...raw.alerted },
     log: raw.log ?? [],
   }
 }
@@ -415,6 +417,10 @@ export function apply(prev: Pet, e: Event): Pet {
       if (e.hat === null || p.hats.includes(e.hat)) p.hat = e.hat
       break
     }
+    case 'setting': {
+      p.settings = { ...p.settings, [e.key]: e.on }
+      break
+    }
     case 'rename': {
       note(p, e.at, `${p.name} is now called ${e.name}.`)
       p.name = e.name
@@ -469,4 +475,23 @@ export function age(p: Pet, now: number) {
   if (d >= 1) return `${d} day${d === 1 ? '' : 's'}`
   const h = Math.floor((now - p.born) / HOUR)
   return h >= 1 ? `${h}h` : `${Math.max(1, Math.floor((now - p.born) / MIN))}m`
+}
+
+const ALERTS = {
+  hungry: { when: (p: Pet) => p.hunger < 20, text: (p: Pet) => `${p.name} is very hungry.` },
+  sick: { when: (p: Pet) => isSick(p), text: (p: Pet) => `${p.name} feels sick from all the errors.` },
+  messy: { when: (p: Pet) => p.mess >= 3, text: (p: Pet) => `${p.name}'s habitat needs a clean.` },
+  tired: { when: (p: Pet) => p.energy < 10, text: (p: Pet) => `${p.name} is exhausted. Tuck it in or try a coffee.` },
+} as const
+
+/** Alerts that just became true: each fires once, and re-arms when its condition clears. */
+export function alerts(p: Pet): { pet: Pet; fire: string[] } {
+  const alerted = { ...p.alerted }
+  const fire: string[] = []
+  for (const [key, a] of Object.entries(ALERTS) as [keyof typeof ALERTS, (typeof ALERTS)[keyof typeof ALERTS]][]) {
+    const now = a.when(p)
+    if (now && !alerted[key]) fire.push(a.text(p))
+    alerted[key] = now
+  }
+  return { pet: { ...p, alerted }, fire: p.settings.alerts ? fire : [] }
 }

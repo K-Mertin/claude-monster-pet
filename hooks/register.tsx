@@ -4,7 +4,7 @@ import type { EngineInterface, Register, Timer } from 'claude-code'
 import { talkLine } from './lines'
 import {
   BADGES, HATS, ITEMS, LINE_NAMES, PERSONALITIES, SKILL_NAMES,
-  age, applyAll, face, formName, hatch, isAsleep, isSick, level, normalize, xpFor,
+  age, alerts, applyAll, face, formName, hatch, isAsleep, isSick, level, normalize, xpFor,
   type Event, type Hat, type Item, type Pet, type Skill,
 } from './pet'
 import { FRAME_MS, cells, cropAll, framesSvg, habitatFrames, petFrames } from './render'
@@ -50,7 +50,8 @@ async function flush($: EngineInterface) {
   pending = []
   const now = await $.clock.now()
   const before = await load($)
-  const pet = applyAll(before, events, now)
+  const raised = alerts(applyAll(before, events, now))
+  const pet = raised.pet
   try {
     if (file) await $.fs.write(file, JSON.stringify(pet))
     else await $.store.set('pet', pet)
@@ -61,7 +62,98 @@ async function flush($: EngineInterface) {
     if (b) $.ui.toast(`🏅 ${pet.name} earned “${b.name}”${b.hat ? ` · new hat: ${HATS[b.hat]}` : ''}`)
   }
   if (pet.stage !== before.stage) $.ui.toast(`✨ ${pet.name} evolved into ${formName(pet)}!`)
+  for (const text of raised.fire) $.ui.toast(`⚠ ${text}`)
+  if (pet.stage !== before.stage) void sound($, pet, 'evolve')
+  else if (pet.badges.length > before.badges.length) void sound($, pet, 'badge')
+  else if (raised.fire.length) void sound($, pet, 'alert')
   await update($, petAtom, () => pet)
+}
+
+async function sound($: EngineInterface, p: Pet, name: 'evolve' | 'badge' | 'win' | 'alert') {
+  if (!p.settings.sound) return
+  try {
+    await $.audio.play({ asset: `sounds/${name}.wav` }, { gain: 0.5 })
+  } catch {}
+}
+
+// ── The treat hunt, played from the pane's buttons or typed as /pet hunt.
+const BUSHES = ['left', 'middle', 'right'] as const
+
+async function huntStart($: EngineInterface): Promise<string> {
+  const p = await read($, petAtom)
+  const wait = (p?.cooldowns.game ?? 0) - Date.now()
+  if (wait > 0) return `${p?.name ?? 'Your monster'} is resting. Try again in ${since(wait)}.`
+  if (p && p.energy < 10) return `${p.name} is too tired to play. Tuck it in or give it a coffee.`
+  await update($, huntAtom, () => ({ round: 1, score: 0, treat: Math.floor(Math.random() * 3), picked: null }))
+  return `${p?.name ?? 'It'} hid a cookie. Round 1/3: left, middle or right? (/pet hunt <bush>)`
+}
+
+async function huntPick($: EngineInterface, b: number, advance: boolean): Promise<string> {
+  const h = await read($, huntAtom)
+  if (!h) return 'No hunt running. Start one with /pet hunt.'
+  if (h.picked !== null) return advance ? huntNext($) : 'Already picked. Press Next round.'
+  const found = b === h.treat
+  const next = { ...h, picked: b, score: h.score + (found ? 1 : 0) }
+  await update($, huntAtom, () => next)
+  const said = found ? `Found it under the ${BUSHES[b]} bush!` : `Not there… it was under the ${BUSHES[h.treat]} bush.`
+  return advance ? `${said} ${await huntNext($)}` : said
+}
+
+async function huntNext($: EngineInterface): Promise<string> {
+  const h = await read($, huntAtom)
+  if (!h) return ''
+  if (h.round < 3) {
+    await update($, huntAtom, () => ({ round: h.round + 1, score: h.score, treat: Math.floor(Math.random() * 3), picked: null }))
+    return `Round ${h.round + 1}/3: left, middle or right?`
+  }
+  const won = h.score >= 2
+  const prize = won ? PRIZES[Math.floor(Math.random() * PRIZES.length)] : undefined
+  await update($, huntAtom, () => null)
+  await act($, { kind: 'game', won, prize, at: Date.now() })
+  const p = await read($, petAtom)
+  if (won && p) void sound($, p, 'win')
+  return won ? `Won ${h.score}/3! Prize: ${prize ? ITEMS[prize].icon + ' ' + ITEMS[prize].name : 'none'}.` : `Found ${h.score}/3. Better luck next time!`
+}
+
+/** What a typed /pet command did, told plainly. */
+function reply(verb: string, arg: string, before: Pet | null, after: Pet, now: number): string | undefined {
+  const name = after.name
+  switch (verb) {
+    case 'feed':
+      if (before && (before.cooldowns.feed ?? 0) > now) return `${name} is still full. Feed again in ${since((before.cooldowns.feed ?? 0) - now)}, or use a cookie.`
+      return `You fed ${name}. Food ${Math.round(after.hunger)}%.`
+    case 'play':
+      if (before && (before.cooldowns.play ?? 0) > now) return `${name} is tired of playing. Again in ${since((before.cooldowns.play ?? 0) - now)}.`
+      if (before && before.energy < 10) return `${name} is too tired to play.`
+      return `You played with ${name}. Joy ${Math.round(after.joy)}%.`
+    case 'clean':
+      return before && before.mess === 0 ? 'Nothing to clean yet. Messes appear after every third meal.' : `All clean! ${name} is happier.`
+    case 'tuck':
+      return `${name} is tucked in for two hours. Good night!`
+    case 'talk':
+      return after.said ? `“${after.said.text}”` : undefined
+    case 'use': {
+      if (!(arg in ITEMS)) return `Use what? ${Object.keys(ITEMS).join(', ')}.`
+      const item = arg as Item
+      if (before && before.items[item] <= 0) return `No ${ITEMS[item].name.toLowerCase()}s left. ${ITEMS[item].what}`
+      return `${name} had a ${ITEMS[item].name.toLowerCase()} ${ITEMS[item].icon}. ${after.items[item]} left.`
+    }
+    case 'train': {
+      if (!(arg in SKILL_NAMES)) return 'Train what? power, wisdom or speed.'
+      const skill = arg as Skill
+      if (before && (before.cooldowns.train ?? 0) > now) return `${name} is resting. Train again in ${since((before.cooldowns.train ?? 0) - now)}.`
+      if (before && after.skills[skill] === before.skills[skill]) return `${name} is too tired or hungry to train.`
+      return `${name} trained ${SKILL_NAMES[skill]}: now ${after.skills[skill]}.`
+    }
+    case 'hat':
+      if (!arg || arg === 'none') return `${name} took its hat off.`
+      if (!after.hats.includes(arg as Hat)) return `${name} hasn't unlocked that. Unlocked: ${after.hats.length ? after.hats.join(', ') : 'none yet'}.`
+      return `${name} is wearing the ${HATS[arg as Hat].toLowerCase()}.`
+    case 'sound':
+    case 'alerts':
+      return `${verb === 'sound' ? 'Sounds' : 'Alerts'} ${after.settings[verb] ? 'on' : 'off'}.`
+  }
+  return undefined
 }
 
 function queue(e: Event) {
@@ -112,6 +204,38 @@ function since(ms: number) {
 
 const PRIZES: Item[] = ['cookie', 'cookie', 'cookie', 'coffee', 'coffee', 'gem']
 
+async function petCommand($: EngineInterface, args: string): Promise<{ text: string }> {
+  const [verb = '', ...rest] = args.trim().split(/\s+/)
+  const arg = rest.join(' ').toLowerCase()
+  const now = await $.clock.now()
+  const before = await load($)
+  if (verb === 'hunt') {
+    const b = BUSHES.indexOf(arg as (typeof BUSHES)[number])
+    const text = !arg ? await huntStart($) : b < 0 ? 'Pick left, middle or right.' : await huntPick($, b, true)
+    return { text }
+  }
+  switch (verb) {
+    case 'feed': queue({ kind: 'feed', at: now }); break
+    case 'play': queue({ kind: 'play', at: now }); break
+    case 'clean': queue({ kind: 'clean', at: now }); break
+    case 'tuck': queue({ kind: 'tuck', at: now }); break
+    case 'talk': if (before) queue({ kind: 'talk', text: talkLine(before, now), at: now }); break
+    case 'use': if (arg in ITEMS) queue({ kind: 'use', item: arg as Item, at: now }); break
+    case 'train': if (arg in SKILL_NAMES) queue({ kind: 'train', skill: arg as Skill, at: now }); break
+    case 'hat': queue({ kind: 'equip', hat: arg === 'none' || !arg ? null : (arg as Hat), at: now }); break
+    case 'name': if (arg) queue({ kind: 'rename', name: rest.join(' ').slice(0, 24), at: now }); break
+    case 'sound':
+    case 'alerts': queue({ kind: 'setting', key: verb, on: arg !== 'off', at: now }); break
+    case 'hide':
+    case 'show': await update($, hiddenAtom, () => verb === 'hide'); break
+  }
+  await flush($)
+  const p = await read($, petAtom)
+  if (!verb) await $.ui.open({ id: PANE, title: p ? p.name : 'Monster', rows: 40 })
+  if (!p) return { text: 'Your monster is on its way.' }
+  return { text: `${title(p)} — ${reply(verb, arg, before, p, now) ?? status(p, now)}` }
+}
+
 export const register: Register = on => {
   let ticker: Timer | undefined
   let animator: Timer | undefined
@@ -126,7 +250,7 @@ export const register: Register = on => {
     await $.command.register({
       name: 'pet',
       description: 'See and care for your monster',
-      argumentHint: '[feed|play|talk|clean|tuck|use <item>|train <skill>|hat <hat>|name <name>|hide|show]',
+      argumentHint: '[feed|play|talk|clean|tuck|hunt [bush]|use <item>|train <skill>|hat <hat>|name <name>|sound on|off|alerts on|off|hide|show]',
     })
     ticker?.cancel()
     ticker = $.clock.every(FLUSH_MS, () => void flush($))
@@ -144,27 +268,11 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'pet' }, async ($, e) => {
-    const [verb, ...rest] = e.args.trim().split(/\s+/)
-    const arg = rest.join(' ')
-    const now = await $.clock.now()
-    const p0 = await read($, petAtom)
-    switch (verb) {
-      case 'feed': queue({ kind: 'feed', at: now }); break
-      case 'play': queue({ kind: 'play', at: now }); break
-      case 'clean': queue({ kind: 'clean', at: now }); break
-      case 'tuck': queue({ kind: 'tuck', at: now }); break
-      case 'talk': if (p0) queue({ kind: 'talk', text: talkLine(p0, now), at: now }); break
-      case 'use': if (arg in ITEMS) queue({ kind: 'use', item: arg as Item, at: now }); break
-      case 'train': if (arg in SKILL_NAMES) queue({ kind: 'train', skill: arg as Skill, at: now }); break
-      case 'hat': queue({ kind: 'equip', hat: arg === 'none' || !arg ? null : (arg as Hat), at: now }); break
-      case 'name': if (arg) queue({ kind: 'rename', name: arg.slice(0, 24), at: now }); break
-      case 'hide':
-      case 'show': await update($, hiddenAtom, () => verb === 'hide'); break
+    try {
+      return await petCommand($, e.args)
+    } catch (err) {
+      return { text: `DEBUG ${String(err)} ${(err as Error).stack ?? ''}`.slice(0, 600) }
     }
-    await flush($)
-    const p = await read($, petAtom)
-    if (!verb) await $.ui.open({ id: PANE, title: p ? p.name : 'Monster', rows: 40 })
-    return { text: p ? `${title(p)} — ${status(p, now)}` : 'Your monster is on its way.' }
   })
 
   // ── What it eats and learns from.
@@ -214,7 +322,7 @@ export const register: Register = on => {
     }
     const now = await $.clock.now()
     const frames = cropAll(petFrames(p, now))
-    const { Box, Text } = $.ui.resolve(e)
+    const { Box, Button, Text } = $.ui.resolve(e)
     const info = (
       <Box flexDirection="column">
         <Text color="#FFCD75" bold>{title(p)}{p.streak.days > 1 ? ` · 🔥${p.streak.days}` : ''}</Text>
@@ -223,7 +331,14 @@ export const register: Register = on => {
           <Text color="#FFCD75">nrg {bar(p.energy, 5)}</Text> <Text color="#73EFF7">xp {bar(xpPct(p))}</Text>
           {isSick(p) && <Text color="#E24B4A"> sick</Text>}
         </Text>
-        <Text dimColor>{status(p, now)}</Text>
+        <Box flexDirection="row" gap={1}>
+          <Button key="band-pat" label="♥" plain onPress={() => act($, { kind: 'pet', at: Date.now() })} />
+          <Button key="band-talk" label="💬" plain onPress={async () => {
+            const q = await read($, petAtom)
+            if (q) await act($, { kind: 'talk', text: talkLine(q, Date.now()), at: Date.now() })
+          }} />
+          <Text dimColor>{status(p, now)}</Text>
+        </Box>
       </Box>
     )
     if (e.surface === 'terminal') {
@@ -312,9 +427,7 @@ export const register: Register = on => {
               label={wait > 0 ? `Treat hunt (rest ${since(wait)})` : 'Start treat hunt'}
               hotkey="t"
               onPress={async () => {
-                const q = await read($, petAtom)
-                if (q && (q.cooldowns.game ?? 0) > Date.now()) return
-                await update($, huntAtom, () => ({ round: 1, score: 0, treat: Math.floor(Math.random() * 3), picked: null }))
+                await huntStart($)
               }}
             />
             <Text dimColor>{p.name} hides a cookie in one of three bushes. Find it in 2 of 3 rounds to win a prize.</Text>
@@ -323,7 +436,7 @@ export const register: Register = on => {
           <Box flexDirection="row" gap={1}>
             <Text>Round {hunt.round}/3 · found {hunt.score} · which bush?</Text>
             {(['Left', 'Middle', 'Right'] as const).map((label, b) => (
-              <Button key={`bush-${b}`} label={label} hotkey={String(b + 1)} onPress={() => update($, huntAtom, h => (h && h.picked === null ? { ...h, picked: b, score: h.score + (b === h.treat ? 1 : 0) } : h))} />
+              <Button key={`bush-${b}`} label={label} hotkey={String(b + 1)} onPress={async () => { await huntPick($, b, false) }} />
             ))}
           </Box>
         ) : (
@@ -337,15 +450,7 @@ export const register: Register = on => {
               variant="primary"
               hotkey="n"
               onPress={async () => {
-                const h = await read($, huntAtom)
-                if (!h) return
-                if (h.round < 3) {
-                  await update($, huntAtom, () => ({ round: h.round + 1, score: h.score, treat: Math.floor(Math.random() * 3), picked: null }))
-                  return
-                }
-                const won = h.score >= 2
-                await update($, huntAtom, () => null)
-                await act($, { kind: 'game', won, prize: won ? PRIZES[Math.floor(Math.random() * PRIZES.length)] : undefined, at: Date.now() })
+                await huntNext($)
               }}
             />
           </Box>
@@ -408,6 +513,8 @@ export const register: Register = on => {
             {p.mess > 0 && <Button key="clean" label={`Clean (${p.mess})`} hotkey="c" onPress={() => act($, { kind: 'clean', at: Date.now() })} />}
             <Button key="tuck" label={tucked ? 'Sleeping…' : 'Tuck in'} hotkey="z" onPress={() => act($, { kind: 'tuck', at: Date.now() })} />
             <Button key="band" label={(await read($, hiddenAtom)) ? 'Show band' : 'Hide band'} onPress={() => update($, hiddenAtom, h => !h)} />
+            <Button key="sound" label={p.settings.sound ? 'Sound: on' : 'Sound: off'} onPress={() => act($, { kind: 'setting', key: 'sound', on: !p.settings.sound, at: Date.now() })} />
+            <Button key="alerts" label={p.settings.alerts ? 'Alerts: on' : 'Alerts: off'} onPress={() => act($, { kind: 'setting', key: 'alerts', on: !p.settings.alerts, at: Date.now() })} />
           </Box>
           <Box flexDirection="column">
             {p.log.slice(-5).reverse().map((l, i) => (

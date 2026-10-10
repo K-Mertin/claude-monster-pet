@@ -1,4 +1,4 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 
 import { applyAll, decay, face, hatch, level, HOUR } from '../hooks/pet'
 import { cells, cropAll, framesSvg, habitatFrames, petFrames } from '../hooks/render'
@@ -180,4 +180,41 @@ test('every hat and variant draws', () => {
       expect(framesSvg(frames, 7).length).toBeLessThan(131072)
     }
   }
+})
+
+import type { CommandRunInput } from 'claude-code'
+import { alerts } from '../hooks/pet'
+
+test('an alert fires once, and again only after its condition clears', () => {
+  let p = { ...hatch(T0), hunger: 10 }
+  const first = alerts(p)
+  expect(first.fire).toEqual(['Byte is very hungry.'])
+  expect(alerts(first.pet).fire).toEqual([])
+  const fed = alerts({ ...first.pet, hunger: 60 })
+  expect(alerts({ ...fed.pet, hunger: 10 }).fire.length).toBe(1)
+  p = { ...first.pet, settings: { ...first.pet.settings, alerts: false }, alerted: {} }
+  expect(alerts(p).fire).toEqual([])
+})
+
+const typed = (args: string): CommandRunInput => ({ command: 'pet', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
+
+test('a treat hunt can be played by typing', async ($, on) => {
+  mock.clock(on)
+  mock.store(on)
+  const start = await $.command.run(typed('hunt'))
+  expect(start.text).toContain('Round 1/3')
+  let last = ''
+  for (let i = 0; i < 3; i++) last = (await $.command.run(typed('hunt middle'))).text
+  expect(last).toMatch(/Won|Found \d\/3/)
+  const again = await $.command.run(typed('hunt'))
+  expect(again.text).toContain('resting')
+})
+
+test('typed commands say what happened', async ($, on) => {
+  mock.clock(on)
+  mock.store(on)
+  const r = await $.command.run(typed('clean'))
+  expect(r.text).toContain('Nothing to clean yet')
+  const h = await $.command.run(typed('hat wizard'))
+  expect(h.text).toContain("hasn't unlocked")
 })

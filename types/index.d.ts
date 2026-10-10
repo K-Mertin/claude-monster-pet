@@ -60,6 +60,9 @@ export type Pet = {
   cooldowns: { feed?: number; play?: number; train?: number; game?: number }
   mood?: Mood
   said?: { text: string; at: number }
+  settings: { sound: boolean; alerts: boolean }
+  /** Which alerts have already been shown, so each fires once until it clears. */
+  alerted: { hungry?: boolean; sick?: boolean; messy?: boolean; tired?: boolean }
   log: { at: number; text: string }[]
 }
 
@@ -80,6 +83,7 @@ export type Event =
   | { kind: 'train'; skill: Skill; at: number }
   | { kind: 'equip'; hat: Hat | null; at: number }
   | { kind: 'rename'; name: string; at: number }
+  | { kind: 'setting'; key: 'sound' | 'alerts'; on: boolean; at: number }
 
 declare module 'claude-code' {
   interface PluginState {
