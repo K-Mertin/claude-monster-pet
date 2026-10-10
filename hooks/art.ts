@@ -193,6 +193,8 @@ export function monster(stage: Stage, line: Line | null, pose: Pose, opts: { cra
   for (const side of [-1, 1] as const) {
     const x = cx + side * ex - (side < 0 ? 1 : 0)
     eye(g, x, ey, pose.eyes, stage === 'baby' ? 1 : 2)
+    // Shadow forms: a red glint in the eye, nowhere else.
+    if (grown && opts.variant === 'shadow' && pose.eyes === 'open') g.set(x, ey, RED)
     if (pose.eyes === 'happy' || pose.mouth === 'smile') g.set(x + (side < 0 ? -1 : 2), ey + 2, PINK)
   }
   mouth(g, cx, Math.round(cy + ry * 0.3), line === 'wanderer' && stage !== 'baby' ? 'beak' : pose.mouth)
@@ -214,9 +216,6 @@ export function monster(stage: Stage, line: Line | null, pose: Pose, opts: { cra
       for (const i of [-2, 0, 2]) g.set(cx + i, y + 1, GOLD)
       g.set(cx, y, GOLD_DARK)
     }
-  }
-  if (grown && opts.variant === 'shadow' && (pose.eyes === 'open')) {
-    for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) if (g.get(x, y) === WHITE && y > top && y < cy) g.set(x, y, RED)
   }
 
   g.outline()
