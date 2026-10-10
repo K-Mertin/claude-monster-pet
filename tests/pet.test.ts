@@ -497,3 +497,34 @@ test('host and visitor never overlap while strolling', () => {
   // At the closest point of the stroll, the visitor's left edge stays right of the host's right edge.
   expect(s.visitor!.x - s.walk - (s.petX + s.walk + 24)).toBeGreaterThanOrEqual(0)
 })
+
+test('playing with a tucked-in monster wakes it, a little grumpy', () => {
+  let p = applyAll(hatch(T0), [{ kind: 'tuck', at: T0 }], T0)
+  expect(face(p, T0 + 1000)).toBe('sleep')
+  p = applyAll(p, [{ kind: 'play', at: T0 + 2000 }], T0 + 2000)
+  expect(p.asleepUntil).toBeUndefined()
+  expect(p.log.some(l => l.text.includes('woke up, a little grumpy'))).toBe(true)
+  expect(face(p, T0 + 60_000)).not.toBe('sleep')
+})
+
+test('caring for it counts as being around, so it does not doze off on you', () => {
+  const p = applyAll({ ...hatch(T0), lastActive: T0 - 5 * HOUR }, [{ kind: 'feed', at: T0 }], T0)
+  expect(p.lastActive).toBe(T0)
+})
+
+test('Wake up ends a tuck-in early', () => {
+  let p = applyAll(hatch(T0), [{ kind: 'tuck', at: T0 }], T0)
+  p = applyAll(p, [{ kind: 'wake', at: T0 + 1000 }], T0 + 1000)
+  expect(p.asleepUntil).toBeUndefined()
+  expect(p.log.at(-1)?.text).toContain('Good morning')
+})
+
+test('the status says how long a tucked-in monster sleeps', async ($, on) => {
+  const clock = mock.clock(on)
+  mock.store(on)
+  await $.command.run(typed('tuck'))
+  await clock.advance(20_000) // past the moment the log line shows
+  expect((await $.command.run(typed('show'))).text).toMatch(/tucked in, wakes in (1|2)h/)
+  expect((await $.command.run(typed('wake'))).text).toContain('Good morning')
+  expect((await $.command.run(typed('wake'))).text).toContain('already awake')
+})

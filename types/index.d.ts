@@ -135,6 +135,7 @@ export type Event =
   | { kind: 'talk'; text: string; at: number }
   | { kind: 'clean'; at: number }
   | { kind: 'tuck'; at: number }
+  | { kind: 'wake'; at: number }
   | { kind: 'use'; item: Item; at: number }
   | { kind: 'game'; won: boolean; prize?: Item; at: number }
   | { kind: 'train'; skill: Skill; at: number }

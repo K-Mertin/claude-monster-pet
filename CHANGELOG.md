@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.1
+- Feeding, playing, talking and other care now wake a tucked-in monster (a little grumpy) and count as you being around.
+- A Wake up button and `/pet wake` end a tuck-in early.
+- The status says how long a tucked-in monster will sleep.
+- A failed `/pet` command now shows a plain error instead of debug output.
+
 ## 0.7.0
 - Friends' visits: `/pet visit <DNA code>` brings a friend's monster to stay for a day, drawn from their code and strolling beside yours. Play together or spar once per visit (`/pet visit play|spar|bye`). `/pet visit` shows your own code.
 - Two new badges: Good host and Sparring partner.

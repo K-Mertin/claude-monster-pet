@@ -81,6 +81,9 @@ export function xpFor(lv: number) {
   return lv * lv * 10
 }
 
+/** Things you do with it: each wakes it and counts as you being around. */
+const INTERACTIONS = new Set<Event['kind']>(['feed', 'play', 'pet', 'talk', 'clean', 'use', 'game', 'train', 'visit-play', 'visit-spar'])
+
 const STAGE_AT: { stage: Stage; level: number }[] = [
   { stage: 'baby', level: 1 },
   { stage: 'child', level: 4 },
@@ -297,6 +300,15 @@ export function apply(prev: Pet, e: Event): Pet {
     items: { ...d.items }, skills: { ...d.skills }, hats: [...d.hats], badges: [...d.badges],
   }
   const xp0 = p.xp
+  // You are here: caring for it or playing with it wakes it up and counts as being around.
+  if (INTERACTIONS.has(e.kind)) {
+    if ((p.asleepUntil ?? 0) > e.at) {
+      p.asleepUntil = undefined
+      p.joy = clamp(p.joy - 2)
+      note(p, e.at, `${p.name} woke up, a little grumpy.`)
+    }
+    p.lastActive = Math.max(p.lastActive, e.at)
+  }
   switch (e.kind) {
     case 'tokens': {
       p.hunger = clamp(p.hunger + e.n / 2500)
@@ -445,6 +457,14 @@ export function apply(prev: Pet, e: Event): Pet {
       p.stats.cleaned += 1
       p.mood = { kind: 'cheer', until: e.at + 3000 }
       note(p, e.at, `You tidied up after ${p.name}.`)
+      break
+    }
+    case 'wake': {
+      if ((p.asleepUntil ?? 0) <= e.at) break
+      p.asleepUntil = undefined
+      p.lastActive = Math.max(p.lastActive, e.at)
+      p.mood = { kind: 'wave', until: e.at + 3000 }
+      note(p, e.at, `Good morning, ${p.name}!`)
       break
     }
     case 'tuck': {

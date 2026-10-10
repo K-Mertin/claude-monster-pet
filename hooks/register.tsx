@@ -266,6 +266,8 @@ function reply(verb: string, arg: string, before: Pet | null, after: Pet, now: n
       return before && before.mess === 0 ? 'Nothing to clean yet. Messes appear after every third meal.' : `All clean! ${name} is happier.`
     case 'tuck':
       return `${name} is tucked in for two hours. Good night!`
+    case 'wake':
+      return before && (before.asleepUntil ?? 0) > now ? `Good morning, ${name}!` : `${name} is already awake.`
     case 'talk':
       return after.said ? `“${after.said.text}”` : undefined
     case 'use': {
@@ -317,7 +319,7 @@ function status(p: Pet, now: number) {
   const last = p.log.at(-1)
   if (last && now - last.at < 15000) return last.text
   switch (face(p, now)) {
-    case 'sleep': return (p.asleepUntil ?? 0) > now ? 'zzz… tucked in' : 'zzz… (sleeping while you are away)'
+    case 'sleep': return (p.asleepUntil ?? 0) > now ? `zzz… tucked in, wakes in ${since(p.asleepUntil! - now)}` : 'zzz… sleeping until you are back'
     case 'sick': return 'feeling sick from all the errors'
     case 'hungry': return 'hungry… give Claude some work, or feed it'
     case 'sleepy': return 'sleepy… a coffee would help'
@@ -340,7 +342,7 @@ function since(ms: number) {
 
 const HELP = [
   'Your monster grows from Claude’s work in every session. /pet opens its habitat.',
-  'Care:    /pet feed · play · talk · clean · tuck · use <cookie|coffee|gem|bug>',
+  'Care:    /pet feed · play · talk · clean · tuck · wake · use <cookie|coffee|gem|bug>',
   'Play:    /pet hunt [left|middle|right] · boss [strike|outsmart|dodge] · train <power|wisdom|speed>',
   'Collect: /pet buy <decoration> · hat <hat|none> · retire (after 30 days as an ultimate)',
   'Share:   /pet card (a PNG with its DNA code) · visit [<code>|play|spar|bye]',
@@ -381,6 +383,7 @@ async function petCommand($: EngineInterface, args: string): Promise<{ text: str
     case 'play': queue({ kind: 'play', at: now }); break
     case 'clean': queue({ kind: 'clean', at: now }); break
     case 'tuck': queue({ kind: 'tuck', at: now }); break
+    case 'wake': queue({ kind: 'wake', at: now }); break
     case 'talk': if (before) queue({ kind: 'talk', text: talkLine(before, now), at: now }); break
     case 'use': if (arg in ITEMS) queue({ kind: 'use', item: arg as Item, at: now }); break
     case 'train': if (arg in SKILL_NAMES) queue({ kind: 'train', skill: arg as Skill, at: now }); break
@@ -413,7 +416,7 @@ export const register: Register = on => {
     await $.command.register({
       name: 'pet',
       description: 'See and care for your monster',
-      argumentHint: '[help|card|visit <code>|feed|play|talk|clean|tuck|hunt [bush]|boss [move]|buy <decor>|retire|use <item>|train <skill>|hat <hat>|name <name>|sound on|off|alerts on|off|hide|show]',
+      argumentHint: '[help|card|visit <code>|feed|play|talk|clean|tuck|wake|hunt [bush]|boss [move]|buy <decor>|retire|use <item>|train <skill>|hat <hat>|name <name>|sound on|off|alerts on|off|hide|show]',
     })
     void seed($, home)
     ticker?.cancel()
@@ -434,7 +437,7 @@ export const register: Register = on => {
     try {
       return await petCommand($, e.args)
     } catch (err) {
-      return { text: `DEBUG ${String(err)} ${(err as Error).stack ?? ''}`.slice(0, 600) }
+      return { text: `Something went wrong with /pet ${e.args.trim()}: ${err instanceof Error ? err.message : String(err)}`.slice(0, 300) }
     }
   })
 
@@ -774,7 +777,7 @@ export const register: Register = on => {
               if (q) await act($, { kind: 'talk', text: talkLine(q, Date.now()), at: Date.now() })
             }} />
             {p.mess > 0 && <Button key="clean" label={`Clean (${p.mess})`} hotkey="c" onPress={() => act($, { kind: 'clean', at: Date.now() })} />}
-            <Button key="tuck" label={tucked ? 'Sleeping…' : 'Tuck in'} hotkey="z" onPress={() => act($, { kind: 'tuck', at: Date.now() })} />
+            <Button key="tuck" label={tucked ? 'Wake up' : 'Tuck in'} hotkey="z" onPress={() => act($, { kind: tucked ? 'wake' : 'tuck', at: Date.now() })} />
             <Button key="band" label={(await read($, hiddenAtom)) ? 'Show band' : 'Hide band'} onPress={() => update($, hiddenAtom, hidden => !hidden)} />
             <Button key="sound" label={p.settings.sound ? 'Sound: on' : 'Sound: off'} onPress={() => act($, { kind: 'setting', key: 'sound', on: !p.settings.sound, at: Date.now() })} />
             <Button key="alerts" label={p.settings.alerts ? 'Alerts: on' : 'Alerts: off'} onPress={() => act($, { kind: 'setting', key: 'alerts', on: !p.settings.alerts, at: Date.now() })} />
