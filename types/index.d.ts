@@ -84,6 +84,22 @@ export type Pet = {
   generation: number
   hall: Legend[]
   decor: Decor[]
+  /** Habits, as counts only: what its DNA is drawn from. */
+  habits: {
+    /** Edits per language, from file extensions. */
+    langs: Record<string, number>
+    /** Activity per local hour, 0–23. */
+    hours: number[]
+    edits: number
+    editsSinceCommit: number
+    /** Edits that went into commits, for the average commit size. */
+    committedEdits: number
+    testRuns: number
+    toolCalls: number
+  }
+  /** A number derived from your identity (a hash of your git email): never the email itself. */
+  seed: number | null
+  shiny: boolean
   /** Which alerts have already been shown, so each fires once until it clears. */
   alerted: { hungry?: boolean; sick?: boolean; messy?: boolean; tired?: boolean }
   log: { at: number; text: string }[]
@@ -92,7 +108,7 @@ export type Pet = {
 /** Something that happened in a session, waiting to be applied to the shared pet. */
 export type Event =
   | { kind: 'tokens'; n: number; at: number }
-  | { kind: 'tool'; tool: string; command?: string; failed: boolean; ms?: number; at: number }
+  | { kind: 'tool'; tool: string; command?: string; failed: boolean; ms?: number; ext?: string; at: number }
   | { kind: 'task'; n: number; at: number }
   | { kind: 'agent'; at: number }
   | { kind: 'feed'; at: number }
@@ -110,6 +126,7 @@ export type Event =
   | { kind: 'boss'; won: boolean; at: number }
   | { kind: 'buy'; decor: Decor; at: number }
   | { kind: 'retire'; at: number }
+  | { kind: 'seed'; value: number; at: number }
 
 declare module 'claude-code' {
   interface PluginState {

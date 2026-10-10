@@ -14,7 +14,7 @@ const PINK = 0xf4a0b0
 const SILVER = 0x94b0c2
 const RED = 0xe24b4a
 
-type Palette = { base: Rgb; dark: Rgb; light: Rgb }
+export type Palette = { base: Rgb; dark: Rgb; light: Rgb }
 
 const SHADOW: Record<Line, Palette> = {
   forge: { base: 0x8a3a3a, dark: 0x4a1a2a, light: 0xc96a4a },
@@ -103,12 +103,35 @@ function egg(pose: Pose, cracked: boolean): Sprite {
   return g.sprite()
 }
 
-export function monster(stage: Stage, line: Line | null, pose: Pose, opts: { cracked?: boolean; variant?: Variant | null; hat?: Hat | null } = {}): Sprite {
+/** What a person's habits make of their monster, drawn over its line and stage (see dna.ts). */
+export type Dna = {
+  palette: Palette
+  accent: Rgb
+  pattern: 'none' | 'stripes' | 'spots' | 'patch'
+  mark: 'none' | 'moon' | 'sun' | 'star'
+  build: 'slim' | 'normal' | 'stout'
+  armor: boolean
+  eyes: 'round' | 'sharp' | 'sleepy'
+  extra: 'none' | 'glasses' | 'scarf'
+  shiny: boolean
+  /** From your identity: where the pattern falls. */
+  seed: number
+}
+
+const SHINY: Palette = { base: 0xf2d16b, dark: 0xb8862b, light: 0xfff3c4 }
+const SCARF = 0xd84a4a
+
+export function monster(stage: Stage, line: Line | null, pose: Pose, opts: { cracked?: boolean; variant?: Variant | null; hat?: Hat | null; dna?: Dna } = {}): Sprite {
   if (stage === 'egg') return egg(pose, opts.cracked ?? false)
   const grown = stage === 'adult' || stage === 'ultimate'
-  const pal = line && grown && opts.variant === 'shadow' ? SHADOW[line] : PALETTES[stage === 'baby' || !line ? 'baby' : line]
+  const dna = stage === 'baby' ? undefined : opts.dna
+  const linePal = line && grown && opts.variant === 'shadow' ? SHADOW[line] : PALETTES[stage === 'baby' || !line ? 'baby' : line]
+  // A shadow form keeps its darker line colours unless it is shiny; otherwise habits paint it.
+  const pal = dna ? (dna.shiny ? SHINY : opts.variant === 'shadow' && grown ? darken(dna.palette) : dna.palette) : linePal
   const g = new Grid(SIZE, SIZE)
-  const { rx, ry: ry0 } = BODY[stage]
+  const b0 = BODY[stage]
+  const rx = b0.rx * (dna?.build === 'slim' ? 0.84 : dna?.build === 'stout' ? 1.16 : 1)
+  const ry0 = b0.ry * (dna?.build === 'slim' ? 1.06 : dna?.build === 'stout' ? 0.94 : 1)
   const ry = pose.squash ? ry0 - 0.6 : ry0
   const rxs = pose.squash ? rx + 0.5 : rx
   const floats = line === 'scribe' && stage !== 'baby'
@@ -150,12 +173,49 @@ export function monster(stage: Stage, line: Line | null, pose: Pose, opts: { cra
       else if (dx < -0.25 && dy < -0.35 && dx * dx + dy * dy < 0.75) g.set(x, y, pal.light)
     }
   }
-  // Belly.
-  if (stage !== 'baby') g.ellipse(cx, cy + ry * 0.35, rxs * 0.45, ry * 0.35, pal.light)
+  // Pattern from the second language, placed by the seed, never over the face.
+  if (dna && dna.pattern !== 'none') {
+    const body = new Set([pal.base, pal.dark, pal.light])
+    const k = dna.seed
+    for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) {
+      if (!body.has(g.get(x, y) as Rgb)) continue
+      const dx = (x + 0.5 - cx) / rxs
+      const dy = (y + 0.5 - cy) / ry
+      if (Math.abs(dx) < 0.62 && dy > -0.5 && dy < 0.55) continue
+      // The seed sets stripe spacing, slant and offset, and spot density and placement.
+      const period = 2 + (k % 2)
+      const slant = (k >> 1) % 3 - 1
+      const along = slant === 0 ? y : x + slant * y
+      const density = 7 + ((k >> 3) % 5)
+      const on =
+        dna.pattern === 'stripes' ? (dy < -0.5 ? (x + (k >> 4)) % period === 0 : Math.abs(dx) > 0.62 && (((along + (k >> 5)) % period) + period) % period === 0) :
+        dna.pattern === 'spots' ? (x * 7 + y * 5 + (k >> 2)) % density === 0 || (dy < -0.55 && (x * 3 + y + (k >> 6)) % (density - 3) === 0) :
+        (k % 2 ? dx > 0.3 - ((k >> 7) % 3) * 0.1 : dx < -0.3 + ((k >> 7) % 3) * 0.1) && dy < 0.45
+      if (on) g.set(x, y, dna.accent)
+    }
+  }
+  // Belly: armour scales for steady testers.
+  if (stage !== 'baby') {
+    g.ellipse(cx, cy + ry * 0.35, rxs * 0.45, ry * 0.35, pal.light)
+    if (dna?.armor) {
+      for (let y = Math.round(cy); y < cy + ry; y++) for (let x = Math.round(cx - rxs * 0.45); x <= cx + rxs * 0.45; x++) {
+        if (g.get(x, y) === pal.light && (x + (y % 2)) % 2 === 0) g.set(x, y, SILVER)
+      }
+    }
+  }
+  // A mark on the forehead from the hours it keeps.
+  if (dna && dna.mark !== 'none') {
+    const marks: Record<Exclude<Dna['mark'], 'none'>, [number, number][]> = {
+      moon: [[0, 0], [1, 0], [-1, 1], [0, 2], [1, 2]],
+      sun: [[0, 0], [-1, 1], [0, 1], [1, 1], [0, 2]],
+      star: [[0, 0], [-1, 1], [1, 1], [0, 2]],
+    }
+    for (const [mx, my] of marks[dna.mark]) g.set(cx + mx, top + 1 + my, dna.mark === 'moon' ? WHITE : GOLD)
+  }
 
   // Line features on top.
   if (line === 'forge' && stage !== 'baby') {
-    const h = big ? 3 : 2
+    const h = (big ? 3 : 2) + (dna && (dna.seed >> 8) % 3 === 0 ? 1 : 0)
     g.tri(cx - rxs * 0.5, top - h + 1, h, -1, GOLD)
     g.tri(cx + rxs * 0.5 - 1, top - h + 1, h, 1, GOLD)
   } else if (line === 'summoner' && stage !== 'baby') {
@@ -193,11 +253,29 @@ export function monster(stage: Stage, line: Line | null, pose: Pose, opts: { cra
   for (const side of [-1, 1] as const) {
     const x = cx + side * ex - (side < 0 ? 1 : 0)
     eye(g, x, ey, pose.eyes, stage === 'baby' ? 1 : 2)
+    if (dna && pose.eyes === 'open') {
+      if (dna.eyes === 'sharp') g.set(x + (side < 0 ? 0 : 1), ey - 1, INK)
+      if (dna.eyes === 'sleepy') {
+        g.set(x, ey, pal.dark)
+        g.set(x + 1, ey, pal.dark)
+      }
+    }
+    if (dna?.extra === 'glasses') {
+      for (const [gx, gy] of [[-1, 0], [2, 0], [-1, 1], [2, 1], [0, -1], [1, -1], [0, 2], [1, 2]] as const) g.set(x + gx, ey + gy, INK)
+    }
     // Shadow forms: a red glint in the eye, nowhere else.
     if (grown && opts.variant === 'shadow' && pose.eyes === 'open') g.set(x, ey, RED)
     if (pose.eyes === 'happy' || pose.mouth === 'smile') g.set(x + (side < 0 ? -1 : 2), ey + 2, PINK)
   }
   mouth(g, cx, Math.round(cy + ry * 0.3), line === 'wanderer' && stage !== 'baby' ? 'beak' : pose.mouth)
+
+  if (dna?.extra === 'scarf') {
+    const sy = Math.round(cy + ry * 0.62)
+    for (let x = Math.round(cx - rxs * 0.85); x <= cx + rxs * 0.85; x++) if (g.get(x, sy) !== null) g.set(x, sy, SCARF)
+    g.set(Math.round(cx + rxs * 0.55), sy + 1, SCARF)
+    g.set(Math.round(cx + rxs * 0.55), sy + 2, SCARF)
+  }
+  if (dna?.shiny) for (const [x, y] of [[cx - 4, top + 1], [cx + 5, top + 3]] as const) g.set(x, y, WHITE)
 
   // Ultimate: an aura of sparkles and a crown (unless it wears a hat).
   if (stage === 'ultimate') {
@@ -474,3 +552,8 @@ export const DECOR_SPRITES: Record<Decor, Sprite[]> = {
 export const pumpkin = fromRows(['...kk...', '..kgk...', '.kkkkkk.', 'kooyooyk', 'kooooook', 'koyyyyok', '.kkkkkk.'], DK)
 export const xmasTree = fromRows(['...y...', '..kgk..', '..kgrk.', '.kggggk', '.kgygk.', 'kgggrgk', '.kkkkk.', '...n...'], DK)
 export const cake = fromRows(['..y.y..', '..k.k..', '.kpppk.', 'kwwwwwk', 'kpppppk', 'kkkkkkk'], DK)
+
+function darken(p: Palette): Palette {
+  const d = (c: Rgb, k: number) => (Math.round(((c >> 16) & 255) * k) << 16) | (Math.round(((c >> 8) & 255) * k) << 8) | Math.round((c & 255) * k)
+  return { base: d(p.base, 0.62), dark: d(p.dark, 0.6), light: d(p.light, 0.7) }
+}

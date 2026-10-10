@@ -57,6 +57,12 @@ export function normalize(raw: Partial<Pet>): Pet {
     generation: raw.generation ?? 1,
     hall: raw.hall ?? [],
     decor: raw.decor ?? [],
+    habits: {
+      langs: {}, hours: new Array(24).fill(0), edits: 0, editsSinceCommit: 0, committedEdits: 0, testRuns: 0, toolCalls: 0,
+      ...raw.habits,
+    },
+    seed: raw.seed ?? null,
+    shiny: raw.shiny ?? false,
     alerted: { ...raw.alerted },
     log: raw.log ?? [],
   }
@@ -268,6 +274,9 @@ function rollWeek(p: Pet, at: number) {
 
 function active(p: Pet, at: number) {
   rollWeek(p, at)
+  const hours = [...p.habits.hours]
+  hours[new Date(at).getHours()] = (hours[new Date(at).getHours()] ?? 0) + 1
+  p.habits = { ...p.habits, hours }
   p.lastActive = at
   p.care = { sum: p.care.sum + p.joy, n: p.care.n + 1 }
   streak(p, at)
@@ -293,6 +302,7 @@ export function apply(prev: Pet, e: Event): Pet {
     }
     case 'tool': {
       active(p, e.at)
+      habitsOf(p, e)
       if (e.tool === 'Bash') p.traits.shell += 1
       else if (['Read', 'Edit', 'Write', 'Grep', 'Glob', 'NotebookEdit', 'MultiEdit'].includes(e.tool)) p.traits.code += 1
       else if (e.tool === 'Agent') p.traits.agents += 1
@@ -507,6 +517,14 @@ export function apply(prev: Pet, e: Event): Pet {
       if (!canRetire(p, e.at)) break
       return retire(p, e.at)
     }
+    case 'seed': {
+      if (p.seed !== null) break
+      p.seed = e.value
+      // One in 256 monsters is shiny, decided once by who you are and when it hatched.
+      p.shiny = mix(e.value, p.born) % 256 === 0
+      if (p.shiny) note(p, e.at, `${p.name} has a rare shiny colouring! ✦`)
+      break
+    }
     case 'setting': {
       p.settings = { ...p.settings, [e.key]: e.on }
       break
@@ -625,4 +643,30 @@ export function alerts(p: Pet): { pet: Pet; fire: string[] } {
     alerted[key] = now
   }
   return { pet: { ...p, alerted }, fire: p.settings.alerts ? fire : [] }
+}
+
+/** Mixes two numbers into a well-spread 32-bit value. */
+export function mix(a: number, b: number) {
+  let h = (Math.imul(a | 0, 0x9e3779b1) ^ Math.imul((b / 1000) | 0, 0x85ebca6b)) >>> 0
+  h = Math.imul(h ^ (h >>> 16), 0x7feb352d) >>> 0
+  h = Math.imul(h ^ (h >>> 15), 0x846ca68b) >>> 0
+  return (h ^ (h >>> 16)) >>> 0
+}
+
+const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
+
+function habitsOf(p: Pet, e: Extract<Event, { kind: 'tool' }>) {
+  const h = { ...p.habits, langs: { ...p.habits.langs }, toolCalls: p.habits.toolCalls + 1 }
+  if (EDIT_TOOLS.has(e.tool) && e.ext && !e.failed) {
+    h.langs[e.ext] = (h.langs[e.ext] ?? 0) + 1
+    h.edits += 1
+    h.editsSinceCommit += 1
+  }
+  const cmd = e.command ?? ''
+  if (e.tool === 'Bash' && TEST.test(cmd)) h.testRuns += 1
+  if (e.tool === 'Bash' && COMMIT.test(cmd) && !e.failed) {
+    h.committedEdits += h.editsSinceCommit
+    h.editsSinceCommit = 0
+  }
+  p.habits = h
 }

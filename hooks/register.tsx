@@ -8,6 +8,7 @@ import {
   type Decor, type Event, type Hat, type Item, type Pet, type Skill,
 } from './pet'
 import { MOVES, canFight, move, skillOf, startBattle, type Battle } from './boss'
+import { describe, extOf } from './dna'
 import { compose, habitat, sceneSvg, type Scene } from './habitat'
 import { FRAME_MS, cells, cropAll, framesSvg, petFrames } from './render'
 
@@ -169,6 +170,19 @@ async function retireNow($: EngineInterface): Promise<string> {
 const WEATHER_ICON = { clear: '☀', cloudy: '☁', rain: '🌧', snow: '❄', petals: '🌸', leaves: '🍂' } as const
 const HOLIDAY_NAME: Record<string, string> = { birthday: '🎂 birthday!', halloween: '🎃 Halloween', christmas: '🎄 Christmas', newyear: '🎆 New Year' }
 
+/** A number from who you are: a hash of your git email (or your home folder). The email is never stored. */
+async function seed($: EngineInterface, home: string | undefined) {
+  let id = ''
+  try {
+    const r = await $.process.run(['git', 'config', '--global', 'user.email'])
+    if (r.exitCode === 0) id = r.stdout.trim().toLowerCase()
+  } catch {}
+  if (!id) id = home ?? 'monster'
+  let h = 2166136261
+  for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619)
+  queue({ kind: 'seed', value: h >>> 0, at: Date.now() })
+}
+
 /** What a typed /pet command did, told plainly. */
 function reply(verb: string, arg: string, before: Pet | null, after: Pet, now: number): string | undefined {
   const name = after.name
@@ -317,6 +331,7 @@ export const register: Register = on => {
       description: 'See and care for your monster',
       argumentHint: '[feed|play|talk|clean|tuck|hunt [bush]|boss [move]|buy <decor>|retire|use <item>|train <skill>|hat <hat>|name <name>|sound on|off|alerts on|off|hide|show]',
     })
+    void seed($, home)
     ticker?.cancel()
     ticker = $.clock.every(FLUSH_MS, () => void flush($))
     // Animate the terminal drawings: swap their frames in place.
@@ -364,7 +379,8 @@ export const register: Register = on => {
       const tool = String(e.tool)
       const failed = !r || r.isError === true || r.deny !== undefined
       const command = typeof input.command === 'string' ? input.command : undefined
-      queue({ kind: 'tool', tool, command, failed, ms: Date.now() - started, at: Date.now() })
+      const path = typeof input.file_path === 'string' ? input.file_path : typeof input.notebook_path === 'string' ? input.notebook_path : ''
+      queue({ kind: 'tool', tool, command, failed, ms: Date.now() - started, ext: extOf(path), at: Date.now() })
       if (tool === 'TodoWrite' && r && 'result' in r) {
         const todos = ((r.result ?? {}) as { newTodos?: { status: string }[] }).newTodos ?? []
         const done = todos.filter(t => t.status === 'completed').length
@@ -591,6 +607,14 @@ export const register: Register = on => {
       if (tab === 'style') {
         return (
           <Box flexDirection="column" gap={1}>
+            <Box flexDirection="column">
+              <Text color="#FFCD75" bold>DNA{p.shiny ? ' ✦ shiny' : ''}</Text>
+              {describe(p).map((line, i) => (
+                <Text key={`dna-${i}`}>{line}</Text>
+              ))}
+              <Text dimColor>Only counts are kept: languages by file extension, active hours, commit sizes, test results, and a hash of your git email. No paths, code or messages.</Text>
+            </Box>
+            <Text color="#FFCD75" bold>Hats</Text>
             <Box flexDirection="row" gap={1} flexWrap="wrap">
               <Button key="hat-none" label="No hat" variant={p.hat === null ? 'primary' : 'secondary'} onPress={() => act($, { kind: 'equip', hat: null, at: Date.now() })} />
               {p.hats.map(h => (

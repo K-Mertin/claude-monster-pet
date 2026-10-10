@@ -27,6 +27,25 @@ Answer `y` to add the marketplace, then pick a scope. The egg appears above your
   - **Badges**: 23 achievements, each announced with a toast, and the Hall of Fame
 - Commands: `/pet feed|play|talk|clean|tuck`, `/pet hunt [left|middle|right]`, `/pet boss [strike|outsmart|dodge]`, `/pet use cookie|coffee|gem|bug`, `/pet train power|wisdom|speed`, `/pet buy <decoration>`, `/pet hat <hat>|none`, `/pet retire`, `/pet name <name>`, `/pet sound on|off`, `/pet alerts on|off`, `/pet hide|show`
 
+## Your monster's DNA
+
+From the child stage on, your habits draw your monster, so no two look alike, even on the same evolution line:
+
+![Four Forge adults with different DNA: a slim blue night-owl TypeScript monster with glasses, a stout bold-blue Python monster with a yellow patch, and two Rust monsters with Go-cyan markings that differ only by their owners' seeds](docs/dna.png)
+
+| Habit | Becomes |
+| --- | --- |
+| Your main language (by file extension) | Its colour; the more you stick to one language, the bolder it gets |
+| Your second language | The colour of its pattern |
+| The hours you work | A forehead mark: a moon for night owls, a sun for early birds, a star for steady hours |
+| Edits per commit | Its build: small frequent commits make it slim, big ones stout |
+| Passing tests | Armour scales on its belly |
+| Few errors, late nights, lots of research | Sharp eyes, sleepy eyes, glasses |
+| A 30-day streak | A red scarf |
+| Who you are (a hash of your git email) | Its exact tint, pattern style and placement, horn length, and a one-in-256 chance of a shiny gold colouring |
+
+The Style tab explains each trait and where it came from. Only counts are kept: languages by extension, active hours, commit sizes and test results, plus a hash of your git email. No file paths, code, messages or the email itself.
+
 ## Hats
 
 Badges unlock eight hats: party hat, cap, headphones, wizard hat, flower, bow, beanie and halo.

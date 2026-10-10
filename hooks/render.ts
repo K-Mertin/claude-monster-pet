@@ -1,6 +1,7 @@
 // Turns the pet into animation frames, and frames into an SVG (desktop) or cells (terminal).
 
 import { SIZE, monster, type Pose, type Rgb, type Sprite } from './art'
+import { dnaOf } from './dna'
 import { face, type Face, type Pet } from './pet'
 
 export const FRAME_MS = 260
@@ -63,12 +64,13 @@ function stamp(px: (Rgb | null)[], w: number, h: number, s: Sprite, x: number, y
 /** The pet alone, one frame per pose, each in the same box (so it can bob without the box moving). */
 export function petFrames(p: Pet, now: number): Sprite[] {
   const f = face(p, now)
+  const dna = dnaOf(p)
   const hatching = p.stage === 'egg' && p.xp >= 6
   const pad = 4
   const H = SIZE + pad
   return poses(f).map(({ pose, dy }) => {
     const px = blank(SIZE, H)
-    stamp(px, SIZE, H, monster(p.stage, p.line, pose, { cracked: hatching, variant: p.variant, hat: p.hat }), 0, pad + dy)
+    stamp(px, SIZE, H, monster(p.stage, p.line, pose, { cracked: hatching, variant: p.variant, hat: p.hat, dna }), 0, pad + dy)
     return { w: SIZE, h: H, px }
   })
 }

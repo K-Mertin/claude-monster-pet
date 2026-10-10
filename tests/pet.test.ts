@@ -73,7 +73,7 @@ test('every stage and line draws, in frames of one size, in both renderers', () 
 })
 
 import { talkLine } from '../hooks/lines'
-import { formName, normalize, type Pet } from '../hooks/pet'
+import { formName, normalize, type Event, type Pet } from '../hooks/pet'
 
 test('work earns items: tests give cookies, a fixed failure a bug snack, commits gems, tokens coffee', () => {
   let p = hatch(T0)
@@ -281,5 +281,86 @@ test('the habitat draws every season, weather, holiday and a boss within limits'
     const scene = habitat(p, at, 12, { boss: { kind: 'kraken', hit: true } })
     expect(compose(scene, 1234).px.length).toBe(72 * 40)
     expect(sceneSvg(scene, 7).length).toBeLessThan(131072)
+  }
+})
+
+import { describe as dnaLines, dnaOf, extOf, languages } from '../hooks/dna'
+import { mix } from '../hooks/pet'
+
+const edits = (ext: string, n: number, at = T0): Event[] =>
+  Array.from({ length: n }, (_, i) => ({ kind: 'tool' as const, tool: 'Edit', failed: false, ext, at: at + i }))
+
+test('only a language extension is kept from a path', () => {
+  expect(extOf('/Users/me/secret-project/src/App.tsx')).toBe('tsx')
+  expect(extOf('notes/README.md')).toBeUndefined()
+  expect(extOf('Makefile')).toBeUndefined()
+})
+
+test('edits build up languages; no DNA until there are enough', () => {
+  let p = applyAll(hatch(T0), edits('ts', 6), T0 + 10)
+  expect(dnaOf(p)).toBeUndefined()
+  expect(dnaLines(p)[0]).toContain('4 more file edits')
+  p = applyAll(p, [...edits('tsx', 12, T0 + 20), ...edits('css', 4, T0 + 40)], T0 + 50)
+  const langs = languages(p)
+  expect(langs[0]?.name).toBe('TypeScript')
+  expect(Math.round((langs[0]?.share ?? 0) * 100)).toBe(82)
+  expect(dnaOf(p)?.pattern).not.toBe('none')
+})
+
+test('a more dominant language gives a bolder colour', () => {
+  const sat = (rgb: number) => { const r = rgb >> 16 & 255, g = rgb >> 8 & 255, b = rgb & 255; return Math.max(r, g, b) - Math.min(r, g, b) }
+  const muted = applyAll(hatch(T0), [...edits('ts', 12), ...edits('py', 8, T0 + 100)], T0 + 200)
+  const bold = applyAll(hatch(T0), edits('ts', 40), T0 + 100)
+  expect(sat(dnaOf(bold)!.palette.base)).toBeGreaterThan(sat(dnaOf(muted)!.palette.base))
+})
+
+test('night hours, small commits and green tests show up as moon, slim and armour', () => {
+  const night = Array.from({ length: 40 }, (_, i) => ({ kind: 'tokens' as const, n: 10, at: new Date(2026, 9, 1 + (i % 5), 23, i).getTime() }))
+  const work: Event[] = []
+  for (let c = 0; c < 4; c++) {
+    work.push(...edits('rs', 3, T0 + 1000 + c * 10))
+    work.push({ kind: 'tool', tool: 'Bash', command: 'git commit -m x', failed: false, at: T0 + 1005 + c * 10 })
+  }
+  for (let t = 0; t < 12; t++) work.push({ kind: 'tool', tool: 'Bash', command: 'cargo test', failed: false, at: T0 + 2000 + t })
+  work.push(...edits('rs', 15, T0 + 3000))
+  const p = applyAll(hatch(T0), [...work, ...night], T0 + 10 ** 9)
+  const dna = dnaOf(p)!
+  expect(dna.mark).toBe('moon')
+  expect(dna.eyes).toBe('sleepy')
+  expect(dna.build).toBe('slim')
+  expect(dna.armor).toBe(true)
+})
+
+test('two people with the same habits still look different', () => {
+  const habits = [...edits('go', 20), ...edits('js', 8, T0 + 100)]
+  const a = applyAll(hatch(T0), [{ kind: 'seed', value: 12345, at: T0 }, ...habits], T0 + 200)
+  const b = applyAll(hatch(T0), [{ kind: 'seed', value: 67890, at: T0 }, ...habits], T0 + 200)
+  const draw = (p: Pet) => petFrames({ ...p, stage: 'adult', line: 'forge', variant: 'bright' }, T0)[0]!.px.join()
+  expect(draw(a)).not.toBe(draw(b))
+})
+
+test('shiny is rare and decided once from the seed', () => {
+  const born = hatch(T0).born
+  let lucky = 0
+  while (mix(lucky, born) % 256 !== 0) lucky++
+  const p = applyAll(hatch(T0), [{ kind: 'seed', value: lucky, at: T0 }, { kind: 'seed', value: lucky + 1, at: T0 + 1 }], T0 + 1)
+  expect(p.shiny).toBe(true)
+  expect(p.seed).toBe(lucky)
+  let shinies = 0
+  for (let v = 0; v < 2560; v++) if (mix(v, born) % 256 === 0) shinies++
+  expect(shinies).toBeGreaterThan(2)
+  expect(shinies).toBeLessThan(25)
+})
+
+test('every DNA combination draws within limits', () => {
+  for (const ext of ['ts', 'py', 'rs', 'go', 'rb', 'css']) {
+    const p = applyAll(hatch(T0), [{ kind: 'seed', value: ext.length * 977, at: T0 }, ...edits(ext, 20), ...edits('js', 6, T0 + 50)], T0 + 100)
+    for (const stage of ['child', 'adult', 'ultimate'] as const) {
+      for (const variant of ['bright', 'shadow'] as const) {
+        const frames = habitatFrames({ ...p, stage, line: 'wanderer', variant }, T0, 12)
+        expect(framesSvg(frames, 7).length).toBeLessThan(131072)
+      }
+    }
+    expect(dnaLines(p).length).toBeGreaterThanOrEqual(7)
   }
 })
