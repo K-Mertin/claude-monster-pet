@@ -65,6 +65,10 @@ export function talkLine(p: Pet, now: number, rnd: () => number = Math.random): 
   const h = hour < 5 ? hour + 24 : hour
   for (const [from, to, pool] of HOURS) if (h >= from && h < to) options.push(pick(pool, rnd))
   if (p.streak.days >= 2) options.push(`Day ${p.streak.days} in a row together!`)
+  if (p.visitor && p.visitor.until > now) {
+    const v = p.visitor
+    options.push(`I like ${v.name}!${v.dna.lang1 ? ` They smell like ${v.dna.lang1}.` : ''}`, `Can ${v.name} stay a bit longer?`, `${v.name} and I are racing to the fountain!`)
+  }
   const lv = level(p.xp)
   const toNext = Math.ceil(xpFor(lv + 1) - p.xp)
   if (toNext <= 15) options.push(`Only ${toNext} xp until level ${lv + 1}!`)

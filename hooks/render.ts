@@ -1,8 +1,8 @@
 // Turns the pet into animation frames, and frames into an SVG (desktop) or cells (terminal).
 
 import { SIZE, monster, type Pose, type Rgb, type Sprite } from './art'
-import { dnaOf } from './dna'
-import { face, type Face, type Pet } from './pet'
+import { dnaFromCode, dnaOf } from './dna'
+import { face, type Face, type Pet, type VisitorDna } from './pet'
 
 export const FRAME_MS = 260
 
@@ -73,6 +73,24 @@ export function petFrames(p: Pet, now: number): Sprite[] {
     stamp(px, SIZE, H, monster(p.stage, p.line, pose, { cracked: hatching, variant: p.variant, hat: p.hat, dna }), 0, pad + dy)
     return { w: SIZE, h: H, px }
   })
+}
+
+/** A visiting monster, drawn from its DNA code and turned to face yours. */
+export function visitorFrames(v: VisitorDna): Sprite[] {
+  const pad = 4
+  const H = SIZE + pad
+  const dna = dnaFromCode(v)
+  return poses('happy').map(({ pose, dy }) => {
+    const px = blank(SIZE, H)
+    stamp(px, SIZE, H, mirror(monster(v.stage, v.line, pose, { variant: v.variant, dna })), 0, pad + dy)
+    return { w: SIZE, h: H, px }
+  })
+}
+
+function mirror(s: Sprite): Sprite {
+  const px: (Rgb | null)[] = []
+  for (let y = 0; y < s.h; y++) for (let x = s.w - 1; x >= 0; x--) px.push(s.px[y * s.w + x] ?? null)
+  return { w: s.w, h: s.h, px }
 }
 
 /** One box around every frame's pixels, so frames crop alike; height even for half blocks. */

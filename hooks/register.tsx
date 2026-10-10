@@ -4,11 +4,11 @@ import type { EngineInterface, Register, RenderElement, Timer } from 'claude-cod
 import { talkLine } from './lines'
 import {
   BADGES, DECOR, HATS, ITEMS, LINE_NAMES, PERSONALITIES, QUESTS, RETIRE_AFTER, SKILL_NAMES, canRetire, nextUp, tourTip,
-  age, alerts, applyAll, face, formName, hatch, isAsleep, isSick, level, normalize, xpFor,
+  age, alerts, applyAll, face, formName, hatch, isAsleep, isSick, level, normalize, spar, xpFor,
   type Decor, type Event, type Hat, type Item, type Pet, type Skill,
 } from './pet'
 import { MOVES, canFight, move, skillOf, startBattle, type Battle } from './boss'
-import { card, dnaCode, pngBase64 } from './card'
+import { card, dnaCode, pngBase64, readCode } from './card'
 import { describe, extOf } from './dna'
 import { compose, habitat, sceneSvg, type Scene } from './habitat'
 import { FRAME_MS, cells, cropAll, framesSvg, petFrames } from './render'
@@ -171,6 +171,44 @@ async function retireNow($: EngineInterface): Promise<string> {
 const WEATHER_ICON = { clear: '☀', cloudy: '☁', rain: '🌧', snow: '❄', petals: '🌸', leaves: '🍂' } as const
 const HOLIDAY_NAME: Record<string, string> = { birthday: '🎂 birthday!', halloween: '🎃 Halloween', christmas: '🎄 Christmas', newyear: '🎆 New Year' }
 
+// ── Friends' visits: a DNA code brings their monster over for a day.
+async function visit($: EngineInterface, arg: string): Promise<string> {
+  const p = await load($)
+  const now = Date.now()
+  const word = arg.trim().toLowerCase()
+  const v = p.visitor && p.visitor.until > now ? p.visitor : null
+  if (!word) {
+    const mine = `Your code: ${dnaCode(p)}. Share it; a friend types /pet visit <code> to have ${p.name} over.`
+    return v ? `${v.name} is visiting (leaves in ${Math.ceil((v.until - now) / 3600000)}h). ${mine}` : mine
+  }
+  if (word === 'play') {
+    if (!v) return 'Nobody is visiting. /pet visit <code> invites a friend’s monster.'
+    if (v.played) return `${p.name} and ${v.name} already played today.`
+    await act($, { kind: 'visit-play', at: now })
+    return `${p.name} and ${v.name} played together! +joy, +5 xp.`
+  }
+  if (word === 'spar') {
+    if (!v) return 'Nobody is visiting. /pet visit <code> invites a friend’s monster.'
+    if (v.sparred) return `${p.name} and ${v.name} already sparred today.`
+    if (p.stage === 'egg') return 'An egg cannot spar yet.'
+    const r = spar(p, v.dna, Math.random)
+    await act($, { kind: 'visit-spar', won: r.won, at: now })
+    return r.won ? `${p.name} won the spar, ${r.ours} to ${r.theirs}! 🍪` : `${v.name} won the spar, ${r.theirs} to ${r.ours}. Good game!`
+  }
+  if (word === 'bye' || word === 'end') {
+    if (!v) return 'Nobody is visiting.'
+    await act($, { kind: 'visit-end', at: now })
+    return `${v.name} went home.`
+  }
+  const parsed = readCode(arg)
+  if (!parsed) return 'That isn’t a DNA code. They look like BYTE-00B43-QW2E-8835; the owner gets theirs from /pet visit or /pet card.'
+  if (parsed.fields.seed === p.seed && p.seed !== null) return `That's ${p.name}'s own code! Share it with a friend instead.`
+  const name = parsed.name.charAt(0) + parsed.name.slice(1).toLowerCase()
+  await act($, { kind: 'visit', code: arg.trim().toUpperCase(), name, dna: parsed.fields, at: now })
+  const kind = parsed.fields.line && parsed.fields.stage !== 'egg' && parsed.fields.stage !== 'baby' ? `${LINE_NAMES[parsed.fields.line]} ${parsed.fields.stage}` : parsed.fields.stage
+  return `${name} the ${kind} came to visit for a day! Play together or spar in /pet.`
+}
+
 /** Draws the card and saves it as a PNG beside the pet's file, then opens it. */
 async function makeCard($: EngineInterface): Promise<string> {
   const p = await load($)
@@ -305,7 +343,7 @@ const HELP = [
   'Care:    /pet feed · play · talk · clean · tuck · use <cookie|coffee|gem|bug>',
   'Play:    /pet hunt [left|middle|right] · boss [strike|outsmart|dodge] · train <power|wisdom|speed>',
   'Collect: /pet buy <decoration> · hat <hat|none> · retire (after 30 days as an ultimate)',
-  'Share:   /pet card (a PNG with its DNA code)',
+  'Share:   /pet card (a PNG with its DNA code) · visit [<code>|play|spar|bye]',
   'Setup:   /pet name <name> · sound on|off · alerts on|off · hide|show · tour [skip]',
 ].join('\n')
 
@@ -328,6 +366,7 @@ async function petCommand($: EngineInterface, args: string): Promise<{ text: str
   if (verb === 'retire') return { text: await retireNow($) }
   if (verb === 'card') return { text: await makeCard($) }
   if (verb === 'help') return { text: HELP }
+  if (verb === 'visit') return { text: await visit($, rest.join(' ')) }
   if (verb === 'tour') {
     await act($, { kind: 'tour', action: arg === 'skip' ? 'skip' : 'restart', at: Date.now() })
     return { text: arg === 'skip' ? 'Tour skipped. /pet tour brings it back.' : 'Tour restarted: tips will show above your prompt.' }
@@ -374,7 +413,7 @@ export const register: Register = on => {
     await $.command.register({
       name: 'pet',
       description: 'See and care for your monster',
-      argumentHint: '[help|card|feed|play|talk|clean|tuck|hunt [bush]|boss [move]|buy <decor>|retire|use <item>|train <skill>|hat <hat>|name <name>|sound on|off|alerts on|off|hide|show]',
+      argumentHint: '[help|card|visit <code>|feed|play|talk|clean|tuck|hunt [bush]|boss [move]|buy <decor>|retire|use <item>|train <skill>|hat <hat>|name <name>|sound on|off|alerts on|off|hide|show]',
     })
     void seed($, home)
     ticker?.cancel()
@@ -740,6 +779,14 @@ export const register: Register = on => {
             <Button key="sound" label={p.settings.sound ? 'Sound: on' : 'Sound: off'} onPress={() => act($, { kind: 'setting', key: 'sound', on: !p.settings.sound, at: Date.now() })} />
             <Button key="alerts" label={p.settings.alerts ? 'Alerts: on' : 'Alerts: off'} onPress={() => act($, { kind: 'setting', key: 'alerts', on: !p.settings.alerts, at: Date.now() })} />
           </Box>
+          {p.visitor && p.visitor.until > now && (
+            <Box flexDirection="row" gap={1}>
+              <Text color="#FFCD75">👋 {p.visitor.name} is visiting · leaves in {Math.ceil((p.visitor.until - now) / 3600000)}h</Text>
+              <Button key="visit-play" label={p.visitor.played ? 'Played ✓' : 'Play together'} onPress={async () => { $.ui.toast(await visit($, 'play')) }} />
+              <Button key="visit-spar" label={p.visitor.sparred ? 'Sparred ✓' : 'Spar'} onPress={async () => { $.ui.toast(await visit($, 'spar')) }} />
+              <Button key="visit-bye" label="Say goodbye" onPress={async () => { $.ui.toast(await visit($, 'bye')) }} />
+            </Box>
+          )}
           <Text dimColor>
             Quests {p.quests.length}/{QUESTS.length}: {QUESTS.map(q => `${p.quests.includes(q.id) ? '✓' : '○'} ${q.what}`).join(' · ')}
           </Text>

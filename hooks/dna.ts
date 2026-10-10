@@ -3,7 +3,7 @@
 // pattern, so no two monsters come out alike.
 
 import type { Dna, Rgb } from './art'
-import { mix, type Pet } from './pet'
+import { mix, type Pet, type VisitorDna } from './pet'
 
 export type { Dna }
 
@@ -137,4 +137,21 @@ export function describe(p: Pet): string[] {
   ]
   if (dna.shiny) lines.push('Shiny: yes! A one-in-256 colouring ✦')
   return lines
+}
+
+/** Someone else's DNA, from their code: the share of each language is not in the code, so colours are mid-vivid. */
+export function dnaFromCode(v: VisitorDna): Dna | undefined {
+  const main = v.lang1 ? Object.values(LANGS).find(l => l.name === v.lang1) : undefined
+  if (!main) return undefined
+  const seed = v.seed
+  const jitter = ((seed % 1000) / 1000 - 0.5) * 0.08
+  const hue = (main.hue + ((seed >> 10) % 17) - 8 + 360) % 360
+  const s = 0.68 * (main.sat ?? 1)
+  const second = v.lang2 ? Object.values(LANGS).find(l => l.name === v.lang2) : undefined
+  const accentHue = second ? second.hue : main.name === 'Python' ? 48 : (main.hue + 150 + (seed % 60)) % 360
+  return {
+    palette: { base: hsl(hue, s, 0.55 + jitter), dark: hsl(hue, s * 0.9, 0.32 + jitter), light: hsl(hue, s * 0.8, 0.76 + jitter) },
+    accent: hsl(accentHue, 0.75, 0.6),
+    pattern: v.pattern, mark: v.mark, build: v.build, armor: v.armor, eyes: v.eyes, extra: v.extra, shiny: v.shiny, seed,
+  }
 }

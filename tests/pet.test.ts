@@ -440,3 +440,60 @@ test('/pet help lists the commands by group', async ($, on) => {
   expect(r.text).toContain('Care:')
   expect(r.text).toContain('/pet card')
 })
+
+import { spar, VISIT_MS } from '../hooks/pet'
+
+const friendCode = () => {
+  const f = applyAll(hatch(T0, 'Mochi'), [{ kind: 'seed', value: 777_123, at: T0 }, ...edits('py', 20), ...edits('sql', 5, T0 + 50)], T0 + 60)
+  return dnaCode({ ...f, stage: 'adult', line: 'wanderer', variant: 'bright' })
+}
+
+test('a friend’s code brings their monster for a day; play and spar once each', () => {
+  const code = friendCode()
+  const parsed = readCode(code)!
+  let p = applyAll({ ...hatch(T0), stage: 'child' as const }, [{ kind: 'visit', code, name: 'Mochi', dna: parsed.fields, at: T0 }], T0)
+  expect(p.visitor?.name).toBe('Mochi')
+  expect(p.visitor?.dna.lang1).toBe('Python')
+  p = applyAll(p, [{ kind: 'visit-play', at: T0 + 1 }, { kind: 'visit-play', at: T0 + 2 }], T0 + 2)
+  expect(p.log.filter(l => l.text.includes('played together')).length).toBe(1)
+  p = applyAll(p, [{ kind: 'visit-spar', won: true, at: T0 + 3 }, { kind: 'visit-spar', won: true, at: T0 + 4 }], T0 + 4)
+  expect(p.stats.spars).toBe(1)
+  p = applyAll(p, [{ kind: 'pet', at: T0 + VISIT_MS + 1 }], T0 + VISIT_MS + 1)
+  expect(p.visitor).toBeNull()
+})
+
+test('a spar weighs stage and skills', () => {
+  const v = readCode(friendCode())!.fields
+  const strong = { ...hatch(T0), stage: 'ultimate' as const, skills: { power: 60, wisdom: 60, speed: 60 } }
+  const weak = { ...hatch(T0), stage: 'baby' as const }
+  expect(spar(strong, v, () => 0).won).toBe(true)
+  expect(spar(weak, v, () => 0).won).toBe(false)
+})
+
+test('the visitor draws in the habitat beside your monster', () => {
+  const parsed = readCode(friendCode())!
+  const p = applyAll({ ...hatch(T0), stage: 'child' as const, line: 'forge' as const }, [{ kind: 'visit', code: 'X', name: 'Mochi', dna: parsed.fields, at: T0 }], T0)
+  const scene = habitat(p, T0 + 10, 12)
+  expect(scene.visitor).toBeDefined()
+  expect(sceneSvg(scene, 7).length).toBeLessThan(131072)
+  expect(compose(scene, 500).px.length).toBe(72 * 40)
+})
+
+test('/pet visit explains codes, refuses junk and your own code, and hosts a friend', async ($, on) => {
+  mock.clock(on)
+  mock.store(on)
+  expect((await $.command.run(typed('visit'))).text).toContain('Your code:')
+  expect((await $.command.run(typed('visit hello'))).text).toContain('isn’t a DNA code')
+  const hosted = await $.command.run(typed(`visit ${friendCode()}`))
+  expect(hosted.text).toContain('Mochi the Wanderer adult came to visit')
+  expect((await $.command.run(typed('visit play'))).text).toContain('played together')
+  expect((await $.command.run(typed('visit play'))).text).toContain('already played')
+})
+
+test('host and visitor never overlap while strolling', () => {
+  const parsed = readCode(friendCode())!
+  const p = applyAll({ ...hatch(T0), stage: 'adult' as const, line: 'forge' as const }, [{ kind: 'visit', code: 'X', name: 'Mochi', dna: parsed.fields, at: T0 }], T0)
+  const s = habitat({ ...p, lastActive: T0 + 10 }, T0 + 10, 12)
+  // At the closest point of the stroll, the visitor's left edge stays right of the host's right edge.
+  expect(s.visitor!.x - s.walk - (s.petX + s.walk + 24)).toBeGreaterThanOrEqual(0)
+})

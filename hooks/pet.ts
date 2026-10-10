@@ -1,8 +1,8 @@
 // The monster and the rules that raise it. Pure: events in, a new pet out.
 
-import type { Boss, BossKind, Decor, Event, Hat, Item, Legend, Line, Personality, Pet, Secret, Skill, Stage, Variant } from '../types'
+import type { Boss, BossKind, Decor, Event, Hat, Item, Legend, Line, Personality, Pet, Secret, Skill, Stage, Variant, Visitor, VisitorDna } from '../types'
 
-export type { Boss, BossKind, Decor, Event, Hat, Item, Legend, Line, Personality, Pet, Secret, Skill, Stage, Variant }
+export type { Boss, BossKind, Decor, Event, Hat, Item, Legend, Line, Personality, Pet, Secret, Skill, Stage, Variant, Visitor, VisitorDna }
 
 export const HOUR = 3600_000
 const MIN = 60_000
@@ -44,7 +44,7 @@ export function normalize(raw: Partial<Pet>): Pet {
     traits: { shell: 0, code: 0, agents: 0, web: 0, ...raw.traits },
     stats: {
       tokens: 0, tests: 0, commits: 0, pushes: 0, tasks: 0, errors: 0, fed: 0, meals: 0, played: 0, pats: 0,
-      talks: 0, games: 0, wins: 0, trained: 0, cleaned: 0, agents: 0, bossWins: 0, bossTries: 0, cards: 0, ...raw.stats,
+      talks: 0, games: 0, wins: 0, trained: 0, cleaned: 0, agents: 0, bossWins: 0, bossTries: 0, cards: 0, visits: 0, spars: 0, ...raw.stats,
     },
     cooldowns: { ...raw.cooldowns },
     mood: raw.mood,
@@ -66,6 +66,7 @@ export function normalize(raw: Partial<Pet>): Pet {
     tour: raw.tour ?? { step: 0, done: false },
     quests: raw.quests ?? [],
     seen: raw.seen ?? [],
+    visitor: raw.visitor ?? null,
     alerted: { ...raw.alerted },
     log: raw.log ?? [],
   }
@@ -139,6 +140,8 @@ export const BADGES: Badge[] = [
   { id: 'boss5', name: 'Exterminator', what: 'Defeat 5 weekly Bug Bosses', earned: p => p.stats.bossWins >= 5 },
   { id: 'secret', name: 'Hidden path', what: 'Reach a secret form', earned: p => p.secret !== null },
   { id: 'decor4', name: 'Home sweet home', what: 'Own 4 decorations', earned: p => p.decor.length >= 4 },
+  { id: 'host3', name: 'Good host', what: 'Host 3 visiting monsters', earned: p => p.stats.visits >= 3 },
+  { id: 'spar5', name: 'Sparring partner', what: 'Spar 5 visitors', earned: p => p.stats.spars >= 5 },
   { id: 'legacy', name: 'Legacy', what: 'Retire a monster to the Hall of Fame', earned: p => p.hall.length > 0 },
 ]
 
@@ -189,6 +192,7 @@ export function decay(p: Pet, now: number): Pet {
   const hours = Math.max(0, (now - p.updatedAt) / HOUR)
   if (hours <= 0) return p
   const next = { ...p, updatedAt: now }
+  if (p.visitor && p.visitor.until <= now) next.visitor = null
   const sleeping = isAsleep(p, now)
   next.hunger = clamp(p.hunger - hours * (sleeping ? 2 : 4))
   next.stress = clamp(p.stress - hours * (sleeping ? 10 : 6))
@@ -528,6 +532,44 @@ export function apply(prev: Pet, e: Event): Pet {
       if (p.shiny) note(p, e.at, `${p.name} has a rare shiny colouring! ✦`)
       break
     }
+    case 'visit': {
+      p.visitor = { code: e.code, name: e.name, dna: e.dna, arrived: e.at, until: e.at + VISIT_MS, played: false, sparred: false }
+      p.stats.visits += 1
+      p.mood = { kind: 'wave', until: e.at + 5000 }
+      note(p, e.at, `${e.name} came to visit!`)
+      break
+    }
+    case 'visit-play': {
+      if (!p.visitor || p.visitor.played) break
+      p.visitor = { ...p.visitor, played: true }
+      p.joy = clamp(p.joy + 12)
+      p.xp += 5
+      p.mood = { kind: 'love', until: e.at + 5000 }
+      note(p, e.at, `${p.name} and ${p.visitor.name} played together.`)
+      break
+    }
+    case 'visit-spar': {
+      if (!p.visitor || p.visitor.sparred) break
+      p.visitor = { ...p.visitor, sparred: true }
+      p.stats.spars += 1
+      p.energy = clamp(p.energy - 8)
+      if (e.won) {
+        give(p, 'cookie')
+        p.xp += 8
+        p.mood = { kind: 'win', until: e.at + 5000 }
+        note(p, e.at, `${p.name} won a friendly spar against ${p.visitor.name}! 🍪`)
+      } else {
+        p.joy = clamp(p.joy + 3)
+        p.mood = { kind: 'cheer', until: e.at + 4000 }
+        note(p, e.at, `${p.visitor.name} won the spar. Good game!`)
+      }
+      break
+    }
+    case 'visit-end': {
+      if (p.visitor) note(p, e.at, `${p.visitor.name} went home.`)
+      p.visitor = null
+      break
+    }
     case 'seen': {
       if (!p.seen.includes(e.what)) p.seen = [...p.seen, e.what]
       break
@@ -648,6 +690,7 @@ function secrets(p: Pet, at: number) {
 }
 
 export const RETIRE_AFTER = 30 * 24 * HOUR
+export const VISIT_MS = 24 * HOUR
 
 export function canRetire(p: Pet, now: number) {
   return p.stage === 'ultimate' && p.ultimateAt !== undefined && now - p.ultimateAt >= RETIRE_AFTER
@@ -754,4 +797,13 @@ function habitsOf(p: Pet, e: Extract<Event, { kind: 'tool' }>) {
     h.editsSinceCommit = 0
   }
   p.habits = h
+}
+
+const STAGE_POWER: Record<Stage, number> = { egg: 0, baby: 10, child: 25, adult: 45, ultimate: 70 }
+
+/** A friendly spar: stage and skills against the visitor's stage, with luck. */
+export function spar(p: Pet, v: VisitorDna, rnd: () => number): { won: boolean; ours: number; theirs: number } {
+  const ours = Math.round(STAGE_POWER[p.stage] + (p.skills.power + p.skills.wisdom + p.skills.speed) / 3 + rnd() * 20)
+  const theirs = Math.round(STAGE_POWER[v.stage] + (v.seed % 15) + (v.armor ? 5 : 0) + rnd() * 20)
+  return { won: ours >= theirs, ours, theirs }
 }

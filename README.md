@@ -26,7 +26,7 @@ Answer `y` to add the marketplace, then pick a scope. The egg appears above your
   - **Style**: hats unlocked by badges
   - **Badges**: 23 achievements, each announced with a toast, and the Hall of Fame
 - New here? Tips appear above your prompt, the habitat shows what to do **next**, and `/pet help` lists every command.
-- Commands: `/pet help`, `/pet card`, `/pet feed|play|talk|clean|tuck`, `/pet hunt [left|middle|right]`, `/pet boss [strike|outsmart|dodge]`, `/pet use cookie|coffee|gem|bug`, `/pet train power|wisdom|speed`, `/pet buy <decoration>`, `/pet hat <hat>|none`, `/pet retire`, `/pet name <name>`, `/pet sound on|off`, `/pet alerts on|off`, `/pet hide|show`
+- Commands: `/pet help`, `/pet card`, `/pet visit [<code>|play|spar|bye]`, `/pet feed|play|talk|clean|tuck`, `/pet hunt [left|middle|right]`, `/pet boss [strike|outsmart|dodge]`, `/pet use cookie|coffee|gem|bug`, `/pet train power|wisdom|speed`, `/pet buy <decoration>`, `/pet hat <hat>|none`, `/pet retire`, `/pet name <name>`, `/pet sound on|off`, `/pet alerts on|off`, `/pet hide|show`
 
 ## Your monster's DNA
 
@@ -53,7 +53,13 @@ The Style tab explains each trait and where it came from. Only counts are kept: 
 
 ![A card for Byte, a level 11 Emberkin: a blue striped Forge monster, TypeScript 75%, CSS 18%, Shell 8%, armoured, with its DNA code](docs/card.png)
 
-The DNA code (like `BYTE-00B43-QW2E-8835`) holds its seed and traits, so a future version can bring a friend's monster to visit.
+The DNA code (like `BYTE-00B43-QW2E-8835`) holds its seed and traits.
+
+## Friends' visits
+
+![Byte, a blue TypeScript Forge child, hosting Mochi, a Python Wanderer adult, in the rain](docs/visit.png)
+
+Swap DNA codes with a friend. `/pet visit <their code>` brings their monster to stay for a day, drawn from the code and strolling beside yours. Play together for joy and XP, or have a friendly spar (stage and skills decide it, with a little luck), once each per visit. `/pet visit` shows your own code to share. No server: just copy and paste.
 
 ## Hats
 

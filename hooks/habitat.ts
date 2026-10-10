@@ -3,7 +3,7 @@
 
 import { DECOR_SPRITES, SIZE, ball, bossSprite, bowl, bush, cake, cookie, heart, mess, note, pumpkin, star, sweat, xmasTree, zz, type Rgb, type Sprite } from './art'
 import { face, type BossKind, type Pet } from './pet'
-import { FRAME_MS, paths, petFrames, type Hunt } from './render'
+import { FRAME_MS, paths, petFrames, visitorFrames, type Hunt } from './render'
 
 export const HAB_W = 72
 export const HAB_H = 40
@@ -22,6 +22,8 @@ export type Scene = {
   /** How far it strolls each way; 0 stands still. */
   walk: number
   boss?: { frames: Sprite[]; x: number; y: number }
+  /** A friend's monster, strolling opposite yours. */
+  visitor?: { frames: Sprite[]; x: number; y: number }
   season: Season
   weather: Weather
   holiday: string | null
@@ -187,8 +189,18 @@ export function habitat(p: Pet, now: number, hour: number, opts: { hunt?: Hunt |
     walk = 0
   }
   if (fighting) petX = 4
+  const hosting = p.visitor && p.visitor.until > now && !fighting && !opts.hunt
+  if (hosting && !(asleep && owned.has('bed'))) {
+    // Side by side: each strolls a little, never into the other.
+    petX = 6
+    walk = asleep ? 0 : 5
+  }
 
   const scene: Scene = { bg, pet, petX, petY, walk, season, weather, holiday }
+  if (hosting) {
+    const vf = visitorFrames(p.visitor!.dna)
+    scene.visitor = { frames: vf, x: HAB_W - SIZE - 6, y: HAB_H - vf[0]!.h - 4 }
+  }
   if (opts.boss) {
     const bf = [0, 1, 2, 3].map(i => bossSprite(opts.boss!.kind, i, opts.boss!.hit && i % 2 === 1))
     scene.boss = { frames: bf, x: HAB_W - bf[0]!.w - 2, y: HAB_H - bf[0]!.h - 3 }
@@ -230,6 +242,7 @@ export function compose(scene: Scene, t: number): Sprite {
   const pet = scene.pet[i]!
   stamp(px, pet, scene.petX + walkOffset(scene, t), scene.petY)
   if (scene.boss) stamp(px, scene.boss.frames[i]!, scene.boss.x, scene.boss.y)
+  if (scene.visitor) stamp(px, scene.visitor.frames[(i + 2) % FRAMES]!, scene.visitor.x - walkOffset(scene, t), scene.visitor.y)
   return { w: HAB_W, h: HAB_H, px }
 }
 
@@ -256,5 +269,9 @@ export function sceneSvg(scene: Scene, scale: number): string {
     ? `<animateTransform attributeName="transform" type="translate" values="${scene.petX} ${scene.petY};${scene.petX + w} ${scene.petY};${scene.petX} ${scene.petY};${scene.petX - w} ${scene.petY};${scene.petX} ${scene.petY}" keyTimes="0;0.25;0.5;0.75;1" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1" dur="${WALK_MS}ms" repeatCount="indefinite"/>`
     : ''
   const boss = scene.boss ? `<g transform="translate(${scene.boss.x} ${scene.boss.y})">${cycle(scene.boss.frames)}</g>` : ''
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${HAB_W * scale}" height="${HAB_H * scale}" viewBox="0 0 ${HAB_W} ${HAB_H}" shape-rendering="crispEdges">${cycle(scene.bg)}<g transform="translate(${scene.petX} ${scene.petY})">${stroll}${cycle(scene.pet)}</g>${boss}</svg>`
+  const v = scene.visitor
+  const visitor = v
+    ? `<g transform="translate(${v.x} ${v.y})">${w ? `<animateTransform attributeName="transform" type="translate" values="${v.x} ${v.y};${v.x - w} ${v.y};${v.x} ${v.y};${v.x + w} ${v.y};${v.x} ${v.y}" keyTimes="0;0.25;0.5;0.75;1" calcMode="spline" keySplines="0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1;0.4 0 0.6 1" dur="${WALK_MS}ms" repeatCount="indefinite"/>` : ''}${cycle([...v.frames.slice(2), ...v.frames.slice(0, 2)])}</g>`
+    : ''
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${HAB_W * scale}" height="${HAB_H * scale}" viewBox="0 0 ${HAB_W} ${HAB_H}" shape-rendering="crispEdges">${cycle(scene.bg)}<g transform="translate(${scene.petX} ${scene.petY})">${stroll}${cycle(scene.pet)}</g>${boss}${visitor}</svg>`
 }

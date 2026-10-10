@@ -27,6 +27,17 @@ export type BossKind = 'hydra' | 'golem' | 'imp' | 'kraken'
 /** This week's boss, built from the previous week's failures. */
 export type Boss = { week: string; kind: BossKind; name: string; hp: number; atk: number; beaten: boolean; tries: number }
 
+/** What a DNA code carries: enough to draw someone else's monster. */
+export type VisitorDna = {
+  seed: number; lang1: string | null; lang2: string | null
+  pattern: 'none' | 'stripes' | 'spots' | 'patch'; mark: 'none' | 'moon' | 'sun' | 'star'; build: 'normal' | 'slim' | 'stout'
+  armor: boolean; eyes: 'round' | 'sharp' | 'sleepy'; extra: 'none' | 'glasses' | 'scarf'; shiny: boolean
+  stage: Stage; line: Line | null; variant: Variant | null
+}
+
+/** A friend's monster staying for a day, from their DNA code. */
+export type Visitor = { code: string; name: string; dna: VisitorDna; arrived: number; until: number; played: boolean; sparred: boolean }
+
 /** A monster that retired to the Hall of Fame. */
 export type Legend = { name: string; form: string; level: number; days: number; generation: number; retiredAt: number }
 
@@ -68,7 +79,7 @@ export type Pet = {
     tokens: number; tests: number; commits: number; pushes: number; tasks: number; errors: number
     fed: number; meals: number; played: number; pats: number; talks: number
     games: number; wins: number; trained: number; cleaned: number; agents: number
-    bossWins: number; bossTries: number; cards: number
+    bossWins: number; bossTries: number; cards: number; visits: number; spars: number
     lastTestFailed?: boolean
   }
   cooldowns: { feed?: number; play?: number; train?: number; game?: number }
@@ -106,6 +117,7 @@ export type Pet = {
   quests: string[]
   /** Parts of the pet's world you have opened, for the tour. */
   seen: string[]
+  visitor: Visitor | null
   /** Which alerts have already been shown, so each fires once until it clears. */
   alerted: { hungry?: boolean; sick?: boolean; messy?: boolean; tired?: boolean }
   log: { at: number; text: string }[]
@@ -136,6 +148,10 @@ export type Event =
   | { kind: 'seen'; what: 'pane' | 'items' | 'games' | 'shop' | 'style' | 'badges'; at: number }
   | { kind: 'card'; at: number }
   | { kind: 'tour'; action: 'skip' | 'restart'; at: number }
+  | { kind: 'visit'; code: string; name: string; dna: VisitorDna; at: number }
+  | { kind: 'visit-play'; at: number }
+  | { kind: 'visit-spar'; won: boolean; at: number }
+  | { kind: 'visit-end'; at: number }
 
 declare module 'claude-code' {
   interface PluginState {

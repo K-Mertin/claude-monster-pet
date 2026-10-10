@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.0
+- Friends' visits: `/pet visit <DNA code>` brings a friend's monster to stay for a day, drawn from their code and strolling beside yours. Play together or spar once per visit (`/pet visit play|spar|bye`). `/pet visit` shows your own code.
+- Two new badges: Good host and Sparring partner.
+
 ## 0.6.0
 - First-run tour: one tip at a time above the prompt, moving on as you try each thing (`/pet tour`, `/pet tour skip`).
 - "Next up" in the habitat: the single most useful thing to do now.

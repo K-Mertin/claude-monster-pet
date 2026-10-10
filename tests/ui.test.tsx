@@ -39,3 +39,24 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await pane.unmount()
   })
 }
+
+import { dnaCode } from '../hooks/card'
+import { applyAll, hatch } from '../hooks/pet'
+
+const friend = () => {
+  const f = applyAll(hatch(1_000_000, 'Mochi'), [{ kind: 'seed', value: 4242, at: 1_000_000 }, ...Array.from({ length: 20 }, (_, i) => ({ kind: 'tool' as const, tool: 'Edit', failed: false, ext: 'rs', at: 1_000_001 + i }))], 1_000_100)
+  return dnaCode({ ...f, stage: 'adult', line: 'summoner', variant: 'shadow' })
+}
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`a visiting friend shows up in the Home tab on the ${surface}`, async ($, on) => {
+    mock.clock(on)
+    mock.store(on)
+    await $.command.run(typed(`visit ${friend()}`))
+    const pane = await $.ui.mount({ plugin: 'monster', surface, ...PANE })
+    expect(await pane.find({ type: 'Text', text: /Mochi is visiting/ })).toBeDefined()
+    await pane.press({ key: 'visit-play' })
+    expect(await pane.find({ key: 'visit-play' })).toBeDefined()
+    await pane.unmount()
+  })
+}
