@@ -68,7 +68,7 @@ export type Pet = {
     tokens: number; tests: number; commits: number; pushes: number; tasks: number; errors: number
     fed: number; meals: number; played: number; pats: number; talks: number
     games: number; wins: number; trained: number; cleaned: number; agents: number
-    bossWins: number; bossTries: number
+    bossWins: number; bossTries: number; cards: number
     lastTestFailed?: boolean
   }
   cooldowns: { feed?: number; play?: number; train?: number; game?: number }
@@ -100,6 +100,12 @@ export type Pet = {
   /** A number derived from your identity (a hash of your git email): never the email itself. */
   seed: number | null
   shiny: boolean
+  /** The first-run tour: which step it is on, or done. */
+  tour: { step: number; done: boolean }
+  /** Starter quests already completed and rewarded. */
+  quests: string[]
+  /** Parts of the pet's world you have opened, for the tour. */
+  seen: string[]
   /** Which alerts have already been shown, so each fires once until it clears. */
   alerted: { hungry?: boolean; sick?: boolean; messy?: boolean; tired?: boolean }
   log: { at: number; text: string }[]
@@ -127,6 +133,9 @@ export type Event =
   | { kind: 'buy'; decor: Decor; at: number }
   | { kind: 'retire'; at: number }
   | { kind: 'seed'; value: number; at: number }
+  | { kind: 'seen'; what: 'pane' | 'items' | 'games' | 'shop' | 'style' | 'badges'; at: number }
+  | { kind: 'card'; at: number }
+  | { kind: 'tour'; action: 'skip' | 'restart'; at: number }
 
 declare module 'claude-code' {
   interface PluginState {

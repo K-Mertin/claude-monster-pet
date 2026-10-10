@@ -25,7 +25,8 @@ Answer `y` to add the marketplace, then pick a scope. The egg appears above your
   - **Shop**: spend gems on decorations for the habitat
   - **Style**: hats unlocked by badges
   - **Badges**: 23 achievements, each announced with a toast, and the Hall of Fame
-- Commands: `/pet card`, `/pet feed|play|talk|clean|tuck`, `/pet hunt [left|middle|right]`, `/pet boss [strike|outsmart|dodge]`, `/pet use cookie|coffee|gem|bug`, `/pet train power|wisdom|speed`, `/pet buy <decoration>`, `/pet hat <hat>|none`, `/pet retire`, `/pet name <name>`, `/pet sound on|off`, `/pet alerts on|off`, `/pet hide|show`
+- New here? Tips appear above your prompt, the habitat shows what to do **next**, and `/pet help` lists every command.
+- Commands: `/pet help`, `/pet card`, `/pet feed|play|talk|clean|tuck`, `/pet hunt [left|middle|right]`, `/pet boss [strike|outsmart|dodge]`, `/pet use cookie|coffee|gem|bug`, `/pet train power|wisdom|speed`, `/pet buy <decoration>`, `/pet hat <hat>|none`, `/pet retire`, `/pet name <name>`, `/pet sound on|off`, `/pet alerts on|off`, `/pet hide|show`
 
 ## Your monster's DNA
 

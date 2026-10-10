@@ -44,7 +44,7 @@ export function normalize(raw: Partial<Pet>): Pet {
     traits: { shell: 0, code: 0, agents: 0, web: 0, ...raw.traits },
     stats: {
       tokens: 0, tests: 0, commits: 0, pushes: 0, tasks: 0, errors: 0, fed: 0, meals: 0, played: 0, pats: 0,
-      talks: 0, games: 0, wins: 0, trained: 0, cleaned: 0, agents: 0, bossWins: 0, bossTries: 0, ...raw.stats,
+      talks: 0, games: 0, wins: 0, trained: 0, cleaned: 0, agents: 0, bossWins: 0, bossTries: 0, cards: 0, ...raw.stats,
     },
     cooldowns: { ...raw.cooldowns },
     mood: raw.mood,
@@ -63,6 +63,9 @@ export function normalize(raw: Partial<Pet>): Pet {
     },
     seed: raw.seed ?? null,
     shiny: raw.shiny ?? false,
+    tour: raw.tour ?? { step: 0, done: false },
+    quests: raw.quests ?? [],
+    seen: raw.seen ?? [],
     alerted: { ...raw.alerted },
     log: raw.log ?? [],
   }
@@ -525,6 +528,18 @@ export function apply(prev: Pet, e: Event): Pet {
       if (p.shiny) note(p, e.at, `${p.name} has a rare shiny colouring! ✦`)
       break
     }
+    case 'seen': {
+      if (!p.seen.includes(e.what)) p.seen = [...p.seen, e.what]
+      break
+    }
+    case 'card': {
+      p.stats.cards += 1
+      break
+    }
+    case 'tour': {
+      p.tour = e.action === 'skip' ? { ...p.tour, done: true } : { step: 0, done: false }
+      break
+    }
     case 'setting': {
       p.settings = { ...p.settings, [e.key]: e.on }
       break
@@ -543,7 +558,77 @@ export function apply(prev: Pet, e: Event): Pet {
   grow(p, e.at)
   secrets(p, e.at)
   badges(p, e.at)
+  quests(p, e.at)
+  advanceTour(p)
   return p
+}
+
+// ── Starter quests: small first goals, each rewarded once.
+type Quest = { id: string; what: string; reward: Item; done: (p: Pet) => boolean }
+
+export const QUESTS: Quest[] = [
+  { id: 'feed', what: 'Feed it once', reward: 'cookie', done: p => p.stats.meals >= 1 },
+  { id: 'talk', what: 'Talk with it', reward: 'cookie', done: p => p.stats.talks >= 1 },
+  { id: 'hunt', what: 'Win a treat hunt', reward: 'coffee', done: p => p.stats.wins >= 1 },
+  { id: 'train', what: 'Train a skill', reward: 'cookie', done: p => p.stats.trained >= 1 },
+  { id: 'buy', what: 'Buy a decoration', reward: 'gem', done: p => p.decor.length >= 1 },
+  { id: 'card', what: 'Make its card (/pet card)', reward: 'gem', done: p => p.stats.cards >= 1 },
+  { id: 'boss', what: 'Fight a weekly Bug Boss', reward: 'coffee', done: p => p.stats.bossTries >= 1 },
+]
+
+function quests(p: Pet, at: number) {
+  for (const q of QUESTS) {
+    if (p.quests.includes(q.id) || !q.done(p)) continue
+    p.quests = [...p.quests, q.id]
+    give(p, q.reward)
+    note(p, at, `Quest done: ${q.what.replace(/ \(.*\)$/, '').toLowerCase()}. ${ITEMS[q.reward].icon} for you.`)
+  }
+}
+
+// ── The first-run tour: one tip at a time, each moving on once you have done it.
+export const TOUR: { tip: string; done: (p: Pet) => boolean }[] = [
+  { tip: 'Your egg hatches from Claude’s work: every token feeds it. Just keep coding!', done: p => p.stage !== 'egg' },
+  { tip: 'It hatched! Type /pet to visit its habitat.', done: p => p.seen.includes('pane') },
+  { tip: 'Say hi: press ♥ or 💬 here, or Feed and Talk in /pet.', done: p => p.stats.pats + p.stats.talks + p.stats.meals > 0 },
+  { tip: 'Real work earns treats: passing tests 🍪, commits 💎. See the Items tab.', done: p => p.seen.includes('items') },
+  { tip: 'Try the Games tab: a treat hunt, training, and a weekly Bug Boss.', done: p => p.seen.includes('games') || p.stats.games > 0 },
+  { tip: 'Your habits shape its looks. See its DNA in Style, and share it with /pet card.', done: p => p.seen.includes('style') || p.stats.cards > 0 },
+]
+
+function advanceTour(p: Pet) {
+  if (p.tour.done) return
+  let step = p.tour.step
+  while (step < TOUR.length && TOUR[step]!.done(p)) step++
+  p.tour = step >= TOUR.length ? { step, done: true } : { step, done: false }
+}
+
+export function tourTip(p: Pet): string | null {
+  if (p.tour.done) return null
+  const t = TOUR[p.tour.step]
+  return t ? `Tip ${p.tour.step + 1}/${TOUR.length}: ${t.tip}` : null
+}
+
+/** The single most useful thing to do next, as one line. */
+export function nextUp(p: Pet, now: number): string {
+  if (isSick(p)) return `${p.name} is sick from errors. Some green test runs and rest will help.`
+  if (p.hunger < 25) return `${p.name} is hungry: Feed it, use a 🍪, or give Claude some work.`
+  if (p.mess >= 2) return 'It’s messy in here: press Clean.'
+  if (p.energy < 15) return `${p.name} is exhausted: Tuck it in, or use a ☕.`
+  if (p.boss && !p.boss.beaten && p.stage !== 'egg' && p.stage !== 'baby') return `Your weekly Bug Boss, the ${p.boss.name}, is waiting in Games.`
+  const unworn = p.hats.find(h => p.hat === null && h)
+  if (unworn) return `You've unlocked the ${HATS[unworn].toLowerCase()}: try it on in Style.`
+  const quest = QUESTS.find(q => !p.quests.includes(q.id))
+  const lv = level(p.xp)
+  const nextStage = STAGE_AT.find(s => order(s.stage) > order(p.stage))
+  if (nextStage) {
+    const need = Math.ceil(xpFor(nextStage.level) - p.xp)
+    const why = nextStage.stage === 'child' ? ', when it picks its line from how you work' : nextStage.stage === 'adult' ? '; care decides bright or shadow' : ''
+    if (need <= 40 || !quest) return `${need} xp until it becomes ${article(nextStage.stage)}${why}.`
+  }
+  if (quest) return `Quest: ${quest.what} (reward ${ITEMS[quest.reward].icon}).`
+  const affordable = (Object.keys(DECOR) as Decor[]).find(d => !p.decor.includes(d) && DECOR[d].cost <= p.items.gem)
+  if (affordable) return `You have ${p.items.gem} 💎: the ${DECOR[affordable].name.toLowerCase()} is in the Shop.`
+  return `Level ${lv + 1} in ${Math.ceil(xpFor(lv + 1) - p.xp)} xp. Keep your ${p.streak.days}-day streak going!`
 }
 
 function secretFor(p: Pet): Secret | null {

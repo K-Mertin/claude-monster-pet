@@ -91,7 +91,7 @@ test('work earns items: tests give cookies, a fixed failure a bug snack, commits
 })
 
 test('using an item spends it and does its job', () => {
-  let p = { ...hatch(T0), hunger: 20, energy: 10 }
+  let p = { ...hatch(T0), hunger: 20, energy: 10, quests: ['feed', 'talk', 'hunt', 'train', 'buy', 'card', 'boss'] }
   p = applyAll(p, [{ kind: 'use', item: 'cookie', at: T0 + 1 }], T0 + 1)
   expect(p.items.cookie).toBe(0)
   expect(Math.round(p.hunger)).toBe(35)
@@ -250,7 +250,7 @@ test('a child can beat a boss by using its weaknesses, and is rewarded once', ()
 })
 
 test('gems buy decorations once each', () => {
-  let p = { ...hatch(T0), items: { ...hatch(T0).items, gem: 5 } }
+  let p = { ...hatch(T0), items: { ...hatch(T0).items, gem: 5 }, quests: ['buy'] }
   p = applyAll(p, [{ kind: 'buy', decor: 'desk', at: T0 }, { kind: 'buy', decor: 'desk', at: T0 + 1 }, { kind: 'buy', decor: 'fountain', at: T0 + 2 }], T0 + 2)
   expect(p.decor).toEqual(['desk'])
   expect(p.items.gem).toBe(2)
@@ -397,4 +397,46 @@ test('without a home folder, /pet card answers with the DNA code', async ($, on)
   mock.store(on)
   const r = await $.command.run(typed('card'))
   expect(r.text).toMatch(/DNA code: BYTE-/)
+})
+
+import { nextUp, tourTip } from '../hooks/pet'
+
+test('the tour moves on as you do each thing, and can be skipped or restarted', () => {
+  let p = hatch(T0)
+  expect(tourTip(p)).toContain('Tip 1/6')
+  p = applyAll(p, [{ kind: 'tokens', n: 80_000, at: T0 + 1 }], T0 + 1)
+  expect(tourTip(p)).toContain('Tip 2/6')
+  p = applyAll(p, [{ kind: 'seen', what: 'pane', at: T0 + 2 }, { kind: 'pet', at: T0 + 3 }], T0 + 3)
+  expect(tourTip(p)).toContain('Tip 4/6')
+  p = applyAll(p, [{ kind: 'tour', action: 'skip', at: T0 + 4 }], T0 + 4)
+  expect(tourTip(p)).toBeNull()
+  p = applyAll(p, [{ kind: 'tour', action: 'restart', at: T0 + 5 }], T0 + 5)
+  expect(tourTip(p)).toContain('Tip 4/6')
+})
+
+test('starter quests reward once', () => {
+  let p = hatch(T0)
+  const before = p.items.cookie
+  p = applyAll(p, [{ kind: 'talk', text: 'hi', at: T0 }, { kind: 'talk', text: 'hi', at: T0 + 1 }], T0 + 1)
+  expect(p.quests).toEqual(['talk'])
+  expect(p.items.cookie).toBe(before + 1)
+  p = applyAll(p, [{ kind: 'card', at: T0 + 2 }], T0 + 2)
+  expect(p.quests).toContain('card')
+  expect(p.items.gem).toBe(1)
+})
+
+test('next up points at the most useful thing', () => {
+  const p = hatch(T0)
+  expect(nextUp({ ...p, hunger: 10 }, T0)).toContain('hungry')
+  expect(nextUp({ ...p, mess: 3 }, T0)).toContain('Clean')
+  expect(nextUp({ ...p, stage: 'child', boss: { week: 'w', kind: 'imp', name: 'Lint Imp', hp: 40, atk: 6, beaten: false, tries: 0 } }, T0)).toContain('Lint Imp')
+  expect(nextUp(p, T0)).toMatch(/xp until it becomes a baby|Quest:/)
+})
+
+test('/pet help lists the commands by group', async ($, on) => {
+  mock.clock(on)
+  mock.store(on)
+  const r = await $.command.run(typed('help'))
+  expect(r.text).toContain('Care:')
+  expect(r.text).toContain('/pet card')
 })

@@ -3,7 +3,7 @@ import type { EngineInterface, Register, RenderElement, Timer } from 'claude-cod
 
 import { talkLine } from './lines'
 import {
-  BADGES, DECOR, HATS, ITEMS, LINE_NAMES, PERSONALITIES, RETIRE_AFTER, SKILL_NAMES, canRetire,
+  BADGES, DECOR, HATS, ITEMS, LINE_NAMES, PERSONALITIES, QUESTS, RETIRE_AFTER, SKILL_NAMES, canRetire, nextUp, tourTip,
   age, alerts, applyAll, face, formName, hatch, isAsleep, isSick, level, normalize, xpFor,
   type Decor, type Event, type Hat, type Item, type Pet, type Skill,
 } from './pet'
@@ -193,6 +193,7 @@ async function makeCard($: EngineInterface): Promise<string> {
     } catch {}
   }
   if (!saved) return `Couldn't write the PNG. Your DNA code: ${dnaCode(p)}`
+  queue({ kind: 'card', at: Date.now() })
   try {
     await $.process.run(['open', png])
   } catch {}
@@ -299,6 +300,15 @@ function since(ms: number) {
   return m >= 60 ? `${Math.ceil(m / 60)}h` : `${m}m`
 }
 
+const HELP = [
+  'Your monster grows from Claude’s work in every session. /pet opens its habitat.',
+  'Care:    /pet feed · play · talk · clean · tuck · use <cookie|coffee|gem|bug>',
+  'Play:    /pet hunt [left|middle|right] · boss [strike|outsmart|dodge] · train <power|wisdom|speed>',
+  'Collect: /pet buy <decoration> · hat <hat|none> · retire (after 30 days as an ultimate)',
+  'Share:   /pet card (a PNG with its DNA code)',
+  'Setup:   /pet name <name> · sound on|off · alerts on|off · hide|show · tour [skip]',
+].join('\n')
+
 const PRIZES: Item[] = ['cookie', 'cookie', 'cookie', 'coffee', 'coffee', 'gem']
 
 async function petCommand($: EngineInterface, args: string): Promise<{ text: string }> {
@@ -317,6 +327,11 @@ async function petCommand($: EngineInterface, args: string): Promise<{ text: str
   }
   if (verb === 'retire') return { text: await retireNow($) }
   if (verb === 'card') return { text: await makeCard($) }
+  if (verb === 'help') return { text: HELP }
+  if (verb === 'tour') {
+    await act($, { kind: 'tour', action: arg === 'skip' ? 'skip' : 'restart', at: Date.now() })
+    return { text: arg === 'skip' ? 'Tour skipped. /pet tour brings it back.' : 'Tour restarted: tips will show above your prompt.' }
+  }
   if (verb === 'hunt') {
     const b = BUSHES.indexOf(arg as (typeof BUSHES)[number])
     const text = !arg ? await huntStart($) : b < 0 ? 'Pick left, middle or right.' : await huntPick($, b, true)
@@ -359,7 +374,7 @@ export const register: Register = on => {
     await $.command.register({
       name: 'pet',
       description: 'See and care for your monster',
-      argumentHint: '[card|feed|play|talk|clean|tuck|hunt [bush]|boss [move]|buy <decor>|retire|use <item>|train <skill>|hat <hat>|name <name>|sound on|off|alerts on|off|hide|show]',
+      argumentHint: '[help|card|feed|play|talk|clean|tuck|hunt [bush]|boss [move]|buy <decor>|retire|use <item>|train <skill>|hat <hat>|name <name>|sound on|off|alerts on|off|hide|show]',
     })
     void seed($, home)
     ticker?.cancel()
@@ -447,7 +462,14 @@ export const register: Register = on => {
             const q = await read($, petAtom)
             if (q) await act($, { kind: 'talk', text: talkLine(q, Date.now()), at: Date.now() })
           }} />
-          <Text dimColor>{status(p, now)}</Text>
+          {tourTip(p) ? (
+            <>
+              <Text color="#73EFF7">{tourTip(p)}</Text>
+              <Button key="band-skip" label="Skip tour" plain onPress={() => act($, { kind: 'tour', action: 'skip', at: Date.now() })} />
+            </>
+          ) : (
+            <Text dimColor>{status(p, now)}</Text>
+          )}
         </Box>
       </Box>
     )
@@ -482,6 +504,10 @@ export const register: Register = on => {
     if (!p) return <Text dimColor>Your monster is on its way…</Text>
     const now = await $.clock.now()
     const tab = (await read($, tabAtom)) as Tab
+    // Note what has been opened, for the tour (folded in on the next flush).
+    for (const what of ['pane', tab] as const) {
+      if (what !== 'home' && !p.seen.includes(what) && !pending.some(ev => ev.kind === 'seen' && ev.what === what)) queue({ kind: 'seen', what, at: now })
+    }
     const hunt = await read($, huntAtom)
     let preview: RenderElement | null = null
     if (e.surface === 'desktop' && tab === 'style') {
@@ -507,6 +533,7 @@ export const register: Register = on => {
           {WEATHER_ICON[scene.weather]} {scene.season} · {scene.weather}{scene.holiday ? ` · ${HOLIDAY_NAME[scene.holiday]}` : ''}{p.generation > 1 ? ` · generation ${p.generation}` : ''}
         </Text>
         {said(p, now) && <Text color="#F4F4F4">💬 “{said(p, now)}”</Text>}
+        <Text color="#73EFF7">▸ Next up: {nextUp(p, now)}</Text>
       </Box>
     )
 
@@ -660,15 +687,15 @@ export const register: Register = on => {
             <Text color="#FFCD75" bold>Hats</Text>
             <Box flexDirection="row" gap={1} flexWrap="wrap">
               <Button key="hat-none" label="No hat" variant={p.hat === null ? 'primary' : 'secondary'} onPress={() => act($, { kind: 'equip', hat: null, at: Date.now() })} />
-              {p.hats.map(h => (
-                <Button key={`hat-${h}`} label={HATS[h]} variant={p.hat === h ? 'primary' : 'secondary'} onPress={() => act($, { kind: 'equip', hat: h, at: Date.now() })} />
+              {p.hats.map(hat => (
+                <Button key={`hat-${hat}`} label={HATS[hat]} variant={p.hat === hat ? 'primary' : 'secondary'} onPress={() => act($, { kind: 'equip', hat, at: Date.now() })} />
               ))}
             </Box>
             {(Object.keys(HATS) as Hat[])
-              .filter(h => !p.hats.includes(h))
-              .map(h => {
-                const b = BADGES.find(x => x.hat === h)
-                return <Text key={`locked-${h}`} dimColor>🔒 {HATS[h]}: {b ? b.what.toLowerCase() : 'secret'}</Text>
+              .filter(hat => !p.hats.includes(hat))
+              .map(hat => {
+                const b = BADGES.find(x => x.hat === hat)
+                return <Text key={`locked-${hat}`} dimColor>🔒 {HATS[hat]}: {b ? b.what.toLowerCase() : 'secret'}</Text>
               })}
           </Box>
         )
@@ -709,10 +736,13 @@ export const register: Register = on => {
             }} />
             {p.mess > 0 && <Button key="clean" label={`Clean (${p.mess})`} hotkey="c" onPress={() => act($, { kind: 'clean', at: Date.now() })} />}
             <Button key="tuck" label={tucked ? 'Sleeping…' : 'Tuck in'} hotkey="z" onPress={() => act($, { kind: 'tuck', at: Date.now() })} />
-            <Button key="band" label={(await read($, hiddenAtom)) ? 'Show band' : 'Hide band'} onPress={() => update($, hiddenAtom, h => !h)} />
+            <Button key="band" label={(await read($, hiddenAtom)) ? 'Show band' : 'Hide band'} onPress={() => update($, hiddenAtom, hidden => !hidden)} />
             <Button key="sound" label={p.settings.sound ? 'Sound: on' : 'Sound: off'} onPress={() => act($, { kind: 'setting', key: 'sound', on: !p.settings.sound, at: Date.now() })} />
             <Button key="alerts" label={p.settings.alerts ? 'Alerts: on' : 'Alerts: off'} onPress={() => act($, { kind: 'setting', key: 'alerts', on: !p.settings.alerts, at: Date.now() })} />
           </Box>
+          <Text dimColor>
+            Quests {p.quests.length}/{QUESTS.length}: {QUESTS.map(q => `${p.quests.includes(q.id) ? '✓' : '○'} ${q.what}`).join(' · ')}
+          </Text>
           <Box flexDirection="column">
             {p.log.slice(-5).reverse().map((l, i) => (
               <Text key={`log-${i}`} color="#94B0C2">· {l.text}</Text>
