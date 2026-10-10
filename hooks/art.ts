@@ -1,7 +1,7 @@
 // Draws the monster procedurally: a body, its line's features, eyes and mouth for its mood,
 // then an outline and shading. Every stage and line comes out in one consistent style.
 
-import type { Hat, Line, Stage, Variant } from './pet'
+import type { BossKind, Decor, Hat, Line, Stage, Variant } from './pet'
 
 export type Rgb = number
 export type Sprite = { readonly w: number; readonly h: number; readonly px: readonly (Rgb | null)[] }
@@ -393,3 +393,85 @@ export function bush(): Sprite {
 export function cookie(): Sprite {
   return fromRows(['.kkk.', 'kyoyk', 'koyok', 'kyoyk', '.kkk.'], { k: INK, y: GOLD, o: 0x8a5a3a })
 }
+
+// ── Bug bosses: one body plan, dressed by kind.
+
+const BOSS_PAL: Record<BossKind, Palette & { eye: Rgb }> = {
+  imp: { base: 0x97c459, dark: 0x4e7a2a, light: 0xc9f2b5, eye: RED },
+  golem: { base: 0x8a8aa0, dark: 0x4a4a5e, light: 0xc9c9d4, eye: GOLD },
+  hydra: { base: 0x9b59d0, dark: 0x5d275d, light: 0xd9b8f0, eye: 0x73eff7 },
+  kraken: { base: 0x257179, dark: 0x0f3a3e, light: 0x5dcaa5, eye: RED },
+}
+
+export function bossSprite(kind: BossKind, frame: number, hit: boolean): Sprite {
+  const W = 30
+  const H = 24
+  const g = new Grid(W, H)
+  const pal = BOSS_PAL[kind]
+  const size = kind === 'imp' ? 0.75 : kind === 'kraken' ? 1.15 : 1
+  const cx = 16
+  const cy = 15
+  const rx = 9 * size
+  const ry = 6 * size
+  const step = frame % 2
+  // Legs (or tentacles), drawn first.
+  for (let i = 0; i < 3; i++) {
+    const lx = cx - rx * 0.6 + i * rx * 0.6
+    if (kind === 'kraken') {
+      for (let j = 0; j < 4; j++) g.set(lx + ((j + step) % 2), cy + ry - 1 + j, pal.dark)
+    } else {
+      g.set(lx - 1, cy + ry, pal.dark)
+      g.set(lx - 2 + step, cy + ry + 1, pal.dark)
+    }
+  }
+  g.ellipse(cx, cy, rx, ry, pal.base)
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (g.get(x, y) !== pal.base) continue
+    const dy = (y + 0.5 - cy) / ry
+    if (dy > 0.45) g.set(x, y, pal.dark)
+    else if (dy < -0.5 && (x + y) % 3 === 0) g.set(x, y, pal.light)
+  }
+  // Shell stripes for the golem, spots for the imp.
+  if (kind === 'golem') for (let x = Math.round(cx - rx + 2); x < cx + rx - 1; x += 3) for (let y = Math.round(cy - ry + 2); y < cy + 2; y++) g.set(x, y, pal.dark)
+  // Heads: the hydra has three.
+  const heads = kind === 'hydra' ? [[-7, -8], [0, -10], [7, -8]] : [[-rx - 2, -2]]
+  for (const [hx, hy] of heads) {
+    const x = cx + hx!
+    const y = cy + hy! + (kind === 'hydra' ? step : 0)
+    g.ellipse(x, y, 3.2 * size, 2.8 * size, pal.base)
+    g.set(Math.round(x - 1), Math.round(y - 1), pal.eye)
+    g.set(Math.round(x + 1), Math.round(y - 1), pal.eye)
+    g.set(Math.round(x - 1), Math.round(y + 2), WHITE) // mandibles
+    g.set(Math.round(x + 1), Math.round(y + 2), WHITE)
+  }
+  // Antennae.
+  if (kind !== 'kraken') {
+    const [hx, hy] = heads[Math.floor(heads.length / 2)]!
+    g.set(cx + hx! - 2, cy + hy! - 3 - step, pal.dark)
+    g.set(cx + hx! - 3, cy + hy! - 4, pal.dark)
+  }
+  g.outline()
+  if (hit) for (let i = 0; i < g.px.length; i++) if (g.px[i] !== null && g.px[i] !== INK) g.px[i] = 0xfff3c4
+  return g.sprite()
+}
+
+// ── Garden decorations bought with gems, and holiday props.
+const DK = { k: INK, w: WHITE, y: GOLD, Y: GOLD_DARK, r: RED, p: PINK, s: SILVER, g: 0x38b764, G: 0xa7f070, b: 0x3b5dc9, B: 0x41a6f6, o: 0xef7d57, n: 0x73472c, N: 0x4a2e1d, c: 0x73eff7, v: 0x9b59d0, d: 0x333c57, t: 0xd9b382 }
+
+export const DECOR_SPRITES: Record<Decor, Sprite[]> = {
+  plant: [fromRows(['..kGk..', '.kGgGk.', 'kGgGgGk', '.kgGgk.', '..kkk..', '.kooook', '.koook.', '..kkk..'], DK)],
+  lamp: [fromRows(['.kkk.', 'kyYyk', 'kyyyk', '.kkk.', '..k..', '..k..', '..k..', '..k..', '.kkk.'], DK), fromRows(['.kkk.', 'kYyYk', 'kyYyk', '.kkk.', '..k..', '..k..', '..k..', '..k..', '.kkk.'], DK)],
+  poster: [fromRows(['kkkkkkkk', 'ktttttk.', 'ktbbtbtk', 'kttttttk', 'kkkkkkkk', '...kk...', '...kk...', '...kk...'], DK)],
+  rug: [fromRows(['.kkkkkkkkkkkk.', 'krrwrrwrrwrrwk', 'kwrrwrrwrrwrrk', '.kkkkkkkkkkkk.'], DK)],
+  bed: [fromRows(['k..........k', 'kkkkkkkkkkkk', 'kwwwbbbbbbbk', 'kwwwbBbBbBbk', 'kkkkkkkkkkkk', 'kn........nk'], DK)],
+  toybox: [fromRows(['..k..kk...', '.krk.kyk..', 'kkkkkkkkkk', 'knnNnnNnnk', 'knyyNnyynk', 'knnNnnNnnk', 'kkkkkkkkkk'], DK)],
+  desk: [fromRows(['...kkkkk...', '...kdcdk...', '...kdddk...', '..kkkkkkk..', 'kkkkkkkkkkk', 'knnnnnnnnnk', 'kn.......nk', 'kn.......nk'], DK)],
+  fountain: [
+    fromRows(['....c....', '...cBc...', '..c.B.c..', '....B....', '.kkkkkkk.', 'ksBBBBBsk', 'kssssssk.', '.kkkkkkk.'], DK),
+    fromRows(['...c.c...', '..c.B.c..', '.c..B..c.', '....B....', '.kkkkkkk.', 'ksBcBBBsk', 'kssssssk.', '.kkkkkkk.'], DK),
+  ],
+}
+
+export const pumpkin = fromRows(['...kk...', '..kgk...', '.kkkkkk.', 'kooyooyk', 'kooooook', 'koyyyyok', '.kkkkkk.'], DK)
+export const xmasTree = fromRows(['...y...', '..kgk..', '..kgrk.', '.kggggk', '.kgygk.', 'kgggrgk', '.kkkkk.', '...n...'], DK)
+export const cake = fromRows(['..y.y..', '..k.k..', '.kpppk.', 'kwwwwwk', 'kpppppk', 'kkkkkkk'], DK)

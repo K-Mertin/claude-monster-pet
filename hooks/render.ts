@@ -1,6 +1,6 @@
 // Turns the pet into animation frames, and frames into an SVG (desktop) or cells (terminal).
 
-import { SIZE, ball, bowl, bush, cookie, heart, mess, monster, note, star, sweat, zz, type Pose, type Rgb, type Sprite } from './art'
+import { SIZE, monster, type Pose, type Rgb, type Sprite } from './art'
 import { face, type Face, type Pet } from './pet'
 
 export const FRAME_MS = 260
@@ -103,80 +103,12 @@ export function cropAll(frames: Sprite[]): Sprite[] {
   })
 }
 
-// ── The habitat: sky by the local hour, ground, props, the pet, and what it feels.
-export const HAB_W = 72
-export const HAB_H = 40
-
-function sky(hour: number): [Rgb, Rgb] {
-  if (hour >= 6 && hour < 17) return [0x73c2fb, 0xb5e1ff]
-  if (hour >= 17 && hour < 20) return [0xef7d57, 0xffcd75]
-  return [0x29366f, 0x3b5dc9]
-}
-
 export type Hunt = { round: number; score: number; treat: number; picked: number | null }
-
-export function habitatFrames(p: Pet, now: number, hour: number, hunt?: Hunt | null): Sprite[] {
-  const tucked = (p.asleepUntil ?? 0) > now
-  const [top, bottom] = tucked ? [0x1a1c2c, 0x29366f] as [Rgb, Rgb] : sky(hour)
-  const night = tucked || hour < 6 || hour >= 20
-  const f = face(p, now)
-  const base = blank(HAB_W, HAB_H)
-  for (let y = 0; y < HAB_H; y++) for (let x = 0; x < HAB_W; x++) base[y * HAB_W + x] = y < 14 ? top : y < 28 ? bottom : 0x3e8948
-  // Hills, ground texture.
-  for (let x = 0; x < HAB_W; x++) {
-    const hill = Math.round(26 + Math.sin(x / 9) * 2 + Math.sin(x / 4) * 0.8)
-    for (let y = hill; y < 28; y++) base[y * HAB_W + x] = 0x5aa85e
-    for (let y = 28; y < HAB_H; y++) if ((x * 7 + y * 13) % 17 === 0) base[y * HAB_W + x] = 0x2d6b3a
-    base[28 * HAB_W + x] = 0x2d6b3a
-  }
-  // Sun or moon.
-  const orb = night ? 0xf4f4f4 : 0xffcd75
-  for (let y = -3; y <= 3; y++) for (let x = -3; x <= 3; x++) if (x * x + y * y <= 9) base[(6 + y) * HAB_W + 62 + x] = orb
-  if (night) for (const [x, y] of [[8, 4], [20, 8], [33, 3], [47, 7], [55, 2]] as const) base[y * HAB_W + x] = 0xf4f4f4
-  // Clouds by day.
-  if (!night) for (const [cx, cy] of [[12, 6], [36, 9]] as const) for (let i = -4; i <= 4; i++) for (let j = -1; j <= 1; j++) if (Math.abs(i) + Math.abs(j) * 3 < 6) base[(cy + j) * HAB_W + cx + i] = 0xf4f4f4
-
-  const full = (p.cooldowns.feed ?? 0) > now
-  stamp(base, HAB_W, HAB_H, bowl(full || p.hunger > 70), 10, 31)
-  if ((p.cooldowns.play ?? 0) > now - 10 * 60_000 && p.stats.played > 0) stamp(base, HAB_W, HAB_H, ball(), 56, 32)
-
-  // Messes after meals.
-  for (let i = 0; i < p.mess; i++) stamp(base, HAB_W, HAB_H, mess(), 20 + i * 6, 34 - (i % 2))
-  // The treat hunt: three bushes, one hiding a cookie once a guess is made.
-  if (hunt) {
-    for (let b = 0; b < 3; b++) {
-      const bx = 8 + b * 22
-      stamp(base, HAB_W, HAB_H, bush(), bx, 22)
-      if (hunt.picked !== null && b === hunt.treat) stamp(base, HAB_W, HAB_H, cookie(), bx + 2, 17)
-      if (hunt.picked === b && b !== hunt.treat) for (let i = 0; i < 3; i++) base[(19 + i) * HAB_W + bx + 4 + i] = 0xe24b4a
-    }
-  }
-
-  const frames = petFrames(p, now)
-  const px0 = Math.round(HAB_W / 2 - SIZE / 2)
-  const py0 = HAB_H - frames[0]!.h - 4
-  return frames.map((s, i) => {
-    const px = base.slice()
-    // Shadow under the pet.
-    for (let x = px0 + 6; x < px0 + SIZE - 6; x++) px[(HAB_H - 6) * HAB_W + x] = 0x2d6b3a
-    stamp(px, HAB_W, HAB_H, s, px0, py0)
-    const fx = px0 + SIZE - 2
-    const fy = py0 + 2 - (i % 2)
-    if (f === 'sleep' || f === 'sleepy') stamp(px, HAB_W, HAB_H, zz(), fx + (i % 2), fy - i)
-    else if (f === 'love') stamp(px, HAB_W, HAB_H, heart(), fx, fy - i)
-    else if (f === 'cheer') stamp(px, HAB_W, HAB_H, note(), fx + (i % 2) * 2, fy - i)
-    else if (f === 'evolve') for (const [x, y] of [[px0, py0 + 4 + i], [px0 + SIZE, py0 + 8 - i], [px0 + 4, py0 - i]] as const) stamp(px, HAB_W, HAB_H, star(), x, y)
-    else if (f === 'ouch' || f === 'sick' || f === 'sweat' || f === 'lose') stamp(px, HAB_W, HAB_H, sweat(), px0 + 4, py0 + 6 + (i % 2))
-    else if (f === 'win') for (const [x, y] of [[px0 + 2, py0 + 2 - i], [px0 + SIZE - 4, py0 + 4 - i]] as const) stamp(px, HAB_W, HAB_H, heart(), x, y)
-    else if (f === 'wave') stamp(px, HAB_W, HAB_H, star(), fx + (i % 2), fy)
-    return { w: HAB_W, h: HAB_H, px }
-  })
-}
 
 // ── SVG: each frame defined once, shown in turn with discrete visibility animation.
 const hex = (c: Rgb) => '#' + c.toString(16).padStart(6, '0')
 
-function paths(s: Sprite): string {
+export function paths(s: Sprite): string {
   const byColor = new Map<Rgb, string>()
   for (let y = 0; y < s.h; y++) {
     let x = 0

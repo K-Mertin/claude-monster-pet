@@ -3,21 +3,25 @@ import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import { talkLine } from './lines'
 import {
-  BADGES, HATS, ITEMS, LINE_NAMES, PERSONALITIES, SKILL_NAMES,
+  BADGES, DECOR, HATS, ITEMS, LINE_NAMES, PERSONALITIES, RETIRE_AFTER, SKILL_NAMES, canRetire,
   age, alerts, applyAll, face, formName, hatch, isAsleep, isSick, level, normalize, xpFor,
-  type Event, type Hat, type Item, type Pet, type Skill,
+  type Decor, type Event, type Hat, type Item, type Pet, type Skill,
 } from './pet'
-import { FRAME_MS, cells, cropAll, framesSvg, habitatFrames, petFrames } from './render'
+import { MOVES, canFight, move, skillOf, startBattle, type Battle } from './boss'
+import { compose, habitat, sceneSvg, type Scene } from './habitat'
+import { FRAME_MS, cells, cropAll, framesSvg, petFrames } from './render'
 
 const PANE = 'monster'
 const FLUSH_MS = 5000
-const TABS = ['home', 'items', 'games', 'style', 'badges'] as const
+const TABS = ['home', 'items', 'games', 'shop', 'style', 'badges'] as const
 type Tab = (typeof TABS)[number]
 
 const petAtom = atom({ plugin: 'monster', key: 'pet' } as const, null)
 const hiddenAtom = atom({ plugin: 'monster', key: 'isHidden' } as const, false)
 const tabAtom = atom({ plugin: 'monster', key: 'tab' } as const, 'home')
 const huntAtom = atom({ plugin: 'monster', key: 'hunt' } as const, null)
+const battleAtom = atom({ plugin: 'monster', key: 'battle' } as const, null)
+let lastMoveAt = 0
 
 // ── The shared pet lives in one file every session reads and writes; each session queues
 // what happened and folds it in on a short timer.
@@ -115,6 +119,56 @@ async function huntNext($: EngineInterface): Promise<string> {
   return won ? `Won ${h.score}/3! Prize: ${prize ? ITEMS[prize].icon + ' ' + ITEMS[prize].name : 'none'}.` : `Found ${h.score}/3. Better luck next time!`
 }
 
+// ── The weekly Bug Boss, fought from the pane or typed as /pet boss <move>.
+async function bossStart($: EngineInterface): Promise<string> {
+  const p = await load($)
+  const why = canFight(p)
+  if (why || !p.boss) return why ?? 'No boss yet.'
+  const b = startBattle(p, p.boss, Math.random)
+  await update($, battleAtom, () => b)
+  return `${b.log.at(-1)} Your move: /pet boss strike, outsmart or dodge. ${p.name} ${b.petHp} HP · boss ${b.hp} HP.`
+}
+
+async function bossMove($: EngineInterface, skill: Skill): Promise<string> {
+  const b = await read($, battleAtom)
+  const p = await load($)
+  if (!b || b.over) return 'No fight running. Start one with /pet boss.'
+  if (!p.boss) return 'The boss has gone.'
+  const next: Battle = move(b, p, p.boss, skill, Math.random)
+  lastMoveAt = Date.now()
+  await update($, battleAtom, () => next)
+  const turn = next.log.slice(b.log.length > 0 ? -3 : 0).join(' ')
+  if (next.over) {
+    await act($, { kind: 'boss', won: next.over === 'won', at: Date.now() })
+    const q = await read($, petAtom)
+    if (next.over === 'won' && q) void sound($, q, 'win')
+    return `${turn} ${next.over === 'won' ? 'Victory! +3 💎, +30 xp.' : 'Defeated… rest up and try again.'}`
+  }
+  return `${turn} ${p.name} ${next.petHp}/${next.petMax} HP · boss ${next.hp}/${next.maxHp} HP.`
+}
+
+async function buy($: EngineInterface, d: Decor): Promise<string> {
+  const p = await load($)
+  if (p.decor.includes(d)) return `You already have the ${DECOR[d].name.toLowerCase()}.`
+  if (p.items.gem < DECOR[d].cost) return `The ${DECOR[d].name.toLowerCase()} costs ${DECOR[d].cost} 💎; you have ${p.items.gem}.`
+  await act($, { kind: 'buy', decor: d, at: Date.now() })
+  return `Bought the ${DECOR[d].name.toLowerCase()}! It's in the habitat now.`
+}
+
+async function retireNow($: EngineInterface): Promise<string> {
+  const p = await load($)
+  const now = Date.now()
+  if (!canRetire(p, now)) {
+    if (p.stage !== 'ultimate') return `${p.name} can retire after 30 days as an ultimate.`
+    return `${p.name} can retire in ${Math.ceil(((p.ultimateAt ?? now) + RETIRE_AFTER - now) / 86400000)} days.`
+  }
+  await act($, { kind: 'retire', at: now })
+  return `${p.name} retired to the Hall of Fame. A new egg appeared, keeping your badges, hats, items and decorations.`
+}
+
+const WEATHER_ICON = { clear: '☀', cloudy: '☁', rain: '🌧', snow: '❄', petals: '🌸', leaves: '🍂' } as const
+const HOLIDAY_NAME: Record<string, string> = { birthday: '🎂 birthday!', halloween: '🎃 Halloween', christmas: '🎄 Christmas', newyear: '🎆 New Year' }
+
 /** What a typed /pet command did, told plainly. */
 function reply(verb: string, arg: string, before: Pet | null, after: Pet, now: number): string | undefined {
   const name = after.name
@@ -209,6 +263,16 @@ async function petCommand($: EngineInterface, args: string): Promise<{ text: str
   const arg = rest.join(' ').toLowerCase()
   const now = await $.clock.now()
   const before = await load($)
+  if (verb === 'boss') {
+    if (!arg) return { text: await bossStart($) }
+    const skill = skillOf(arg)
+    return { text: skill ? await bossMove($, skill) : 'Use strike, outsmart or dodge.' }
+  }
+  if (verb === 'buy') {
+    const d = (Object.keys(DECOR) as Decor[]).find(k => k === arg || DECOR[k].name.toLowerCase().startsWith(arg))
+    return { text: d ? await buy($, d) : `Buy what? ${(Object.keys(DECOR) as Decor[]).map(k => `${k} (${DECOR[k].cost}💎)`).join(', ')}` }
+  }
+  if (verb === 'retire') return { text: await retireNow($) }
   if (verb === 'hunt') {
     const b = BUSHES.indexOf(arg as (typeof BUSHES)[number])
     const text = !arg ? await huntStart($) : b < 0 ? 'Pick left, middle or right.' : await huntPick($, b, true)
@@ -241,7 +305,8 @@ export const register: Register = on => {
   let animator: Timer | undefined
   let frame = 0
   let bandFrames: string[] = []
-  let paneFrames: string[] = []
+  let paneScene: Scene | null = null
+  const started = Date.now()
   let bandId = ''
 
   on('session.start', async ($, e, next) => {
@@ -250,7 +315,7 @@ export const register: Register = on => {
     await $.command.register({
       name: 'pet',
       description: 'See and care for your monster',
-      argumentHint: '[feed|play|talk|clean|tuck|hunt [bush]|use <item>|train <skill>|hat <hat>|name <name>|sound on|off|alerts on|off|hide|show]',
+      argumentHint: '[feed|play|talk|clean|tuck|hunt [bush]|boss [move]|buy <decor>|retire|use <item>|train <skill>|hat <hat>|name <name>|sound on|off|alerts on|off|hide|show]',
     })
     ticker?.cancel()
     ticker = $.clock.every(FLUSH_MS, () => void flush($))
@@ -260,8 +325,7 @@ export const register: Register = on => {
       frame++
       const b = bandFrames[frame % Math.max(1, bandFrames.length)]
       if (b && bandId) void $.ui.blit({ requestId: bandId, key: 'pet', cells: b })
-      const p = paneFrames[frame % Math.max(1, paneFrames.length)]
-      if (p) void $.ui.blit({ requestId: PANE, key: 'habitat', cells: p })
+      if (paneScene) void $.ui.blit({ requestId: PANE, key: 'habitat', cells: cells(compose(paneScene, Date.now() - started)).cells })
     })
     void flush($)
     return next(e)
@@ -373,7 +437,9 @@ export const register: Register = on => {
     const now = await $.clock.now()
     const tab = (await read($, tabAtom)) as Tab
     const hunt = await read($, huntAtom)
-    const frames = habitatFrames(p, now, new Date(now).getHours(), tab === 'games' ? hunt : null)
+    const battle = await read($, battleAtom)
+    const fighting = battle && p.boss && tab === 'games' ? { kind: p.boss.kind, hit: !battle.over && now - lastMoveAt < 1200 } : null
+    const scene = habitat(p, now, new Date(now).getHours(), { hunt: tab === 'games' && !battle ? hunt : null, boss: fighting })
     const lv = level(p.xp)
 
     const header = (
@@ -386,6 +452,9 @@ export const register: Register = on => {
           <Text color="#EF7D57">food {bar(p.hunger, 10)}</Text>  <Text color="#A7F070">joy {bar(p.joy, 10)}</Text>  <Text color="#FFCD75">energy {bar(p.energy, 10)}</Text>  <Text color="#E24B4A">stress {bar(p.stress, 10)}</Text>
         </Text>
         <Text color="#73EFF7">xp {bar(xpPct(p), 20)} {Math.floor(p.xp)}/{xpFor(lv + 1)} → Lv {lv + 1}</Text>
+        <Text dimColor>
+          {WEATHER_ICON[scene.weather]} {scene.season} · {scene.weather}{scene.holiday ? ` · ${HOLIDAY_NAME[scene.holiday]}` : ''}{p.generation > 1 ? ` · generation ${p.generation}` : ''}
+        </Text>
         {said(p, now) && <Text color="#F4F4F4">💬 “{said(p, now)}”</Text>}
       </Box>
     )
@@ -395,7 +464,7 @@ export const register: Register = on => {
         {TABS.map(t => (
           <Button
             key={`tab-${t}`}
-            label={t === 'items' ? `Items ${Object.values(p.items).reduce((a, b) => a + b, 0)}` : t === 'badges' ? `Badges ${p.badges.length}/${BADGES.length}` : t[0]!.toUpperCase() + t.slice(1)}
+            label={t === 'items' ? `Items ${Object.values(p.items).reduce((a, b) => a + b, 0)}` : t === 'shop' ? `Shop 💎${p.items.gem}` : t === 'badges' ? `Badges ${p.badges.length}/${BADGES.length}` : t[0]!.toUpperCase() + t.slice(1)}
             variant={t === tab ? 'primary' : 'secondary'}
             onPress={() => update($, tabAtom, () => t)}
           />
@@ -456,9 +525,42 @@ export const register: Register = on => {
           </Box>
         )
         const trainWait = (p.cooldowns.train ?? 0) - now
+        const hpBar = (n: number, max: number) => bar((n / Math.max(1, max)) * 100, 12)
+        const bossRow = !p.boss ? (
+          <Text dimColor>No Bug Boss yet. One forms at the start of each week from the last week’s failures.</Text>
+        ) : battle ? (
+          <Box flexDirection="column">
+            <Text>
+              <Text color="#A7F070">{p.name} {hpBar(battle.petHp, battle.petMax)} {battle.petHp}</Text>  vs  <Text color="#E24B4A">{p.boss.name} {hpBar(battle.hp, battle.maxHp)} {battle.hp}</Text>
+            </Text>
+            {battle.log.slice(-3).map((l, i) => (
+              <Text key={`bl-${i}`} color="#94B0C2">· {l}</Text>
+            ))}
+            {battle.over ? (
+              <Button key="boss-done" label={battle.over === 'won' ? 'Victory! Done' : 'Retreat'} variant="primary" onPress={() => update($, battleAtom, () => null)} />
+            ) : (
+              <Box flexDirection="row" gap={1}>
+                {(['power', 'wisdom', 'speed'] as const).map((sk, i) => (
+                  <Button key={`mv-${sk}`} label={`${MOVES[sk].name} (${SKILL_NAMES[sk]} ${p.skills[sk]})`} hotkey={String(i + 1)} variant={battle.weak === sk ? 'primary' : 'secondary'} onPress={async () => { await bossMove($, sk) }} />
+                ))}
+              </Box>
+            )}
+          </Box>
+        ) : (
+          <Box flexDirection="row" gap={1}>
+            <Button key="boss-fight" label={p.boss.beaten ? `${p.boss.name}: beaten ✓` : `Fight the ${p.boss.name}`} hotkey="b" onPress={async () => { await bossStart($) }} />
+            <Text dimColor>
+              {p.boss.beaten ? 'A new boss forms next week.' : (canFight(p) ?? `${p.boss.hp} HP · attack ${p.boss.atk} · built from last week’s failures · ${p.boss.tries} tries`)}
+            </Text>
+          </Box>
+        )
         return (
           <Box flexDirection="column" gap={1}>
+            <Text color="#FFCD75" bold>Weekly Bug Boss</Text>
+            {bossRow}
+            <Text color="#FFCD75" bold>Treat hunt</Text>
             {huntRow}
+            <Text color="#FFCD75" bold>Training</Text>
             <Box flexDirection="row" gap={1}>
               {(Object.keys(SKILL_NAMES) as Skill[]).map(skill => (
                 <Button key={`train-${skill}`} label={`Train ${SKILL_NAMES[skill]} (${p.skills[skill]})`} onPress={() => act($, { kind: 'train', skill, at: Date.now() })} />
@@ -466,6 +568,23 @@ export const register: Register = on => {
               <Text dimColor>{trainWait > 0 ? `resting ${since(trainWait)}` : 'costs food and energy'}{p.line ? ` · ${LINE_NAMES[p.line]}s learn ${p.line === 'forge' ? 'Power' : p.line === 'scribe' ? 'Wisdom' : p.line === 'wanderer' ? 'Speed' : 'everything'} faster` : ''}</Text>
             </Box>
             <Text dimColor>Treat hunts: {p.stats.wins} won of {p.stats.games} · trained {p.stats.trained} times</Text>
+          </Box>
+        )
+      }
+      if (tab === 'shop') {
+        return (
+          <Box flexDirection="column">
+            <Text dimColor>Spend 💎 gems (from commits, pushes, streaks and Bug Bosses) on things for the habitat. You have {p.items.gem}.</Text>
+            {(Object.keys(DECOR) as Decor[]).map(d => (
+              <Box key={`shop-${d}`} flexDirection="row" gap={1}>
+                <Button
+                  key={`buy-${d}`}
+                  label={p.decor.includes(d) ? `${DECOR[d].name} ✓` : `Buy ${DECOR[d].name} · ${DECOR[d].cost}💎`}
+                  variant={p.decor.includes(d) ? 'secondary' : p.items.gem >= DECOR[d].cost ? 'primary' : 'secondary'}
+                  onPress={async () => { await buy($, d) }}
+                />
+              </Box>
+            ))}
           </Box>
         )
       }
@@ -488,8 +607,19 @@ export const register: Register = on => {
         )
       }
       if (tab === 'badges') {
+        const retireIn = p.stage === 'ultimate' && p.ultimateAt ? Math.ceil((p.ultimateAt + RETIRE_AFTER - now) / 86400000) : null
         return (
           <Box flexDirection="column">
+            <Text color="#FFCD75" bold>Hall of Fame{p.hall.length ? '' : ': empty'}</Text>
+            {p.hall.map((l, i) => (
+              <Text key={`hof-${i}`} color="#FFCD75">👑 Gen {l.generation}: {l.name} the {l.form} · Lv {l.level} · {l.days} days</Text>
+            ))}
+            {canRetire(p, now) ? (
+              <Button key="retire" label={`Retire ${p.name} to the Hall of Fame`} onPress={async () => { await retireNow($) }} />
+            ) : (
+              <Text dimColor>{retireIn !== null ? `${p.name} can retire in ${retireIn} days.` : 'An ultimate can retire after 30 days; the next egg keeps your treasures and a head start.'}</Text>
+            )}
+            <Text color="#FFCD75" bold>Badges</Text>
             {BADGES.map(b => (
               <Text key={`b-${b.id}`} color={p.badges.includes(b.id) ? '#FFCD75' : undefined} dimColor={!p.badges.includes(b.id)}>
                 {p.badges.includes(b.id) ? '🏅' : '○ '} {b.name}: {b.what}{b.hat ? ` (unlocks ${HATS[b.hat].toLowerCase()})` : ''}
@@ -527,8 +657,8 @@ export const register: Register = on => {
 
     if (e.surface === 'terminal') {
       const { Raster } = $.ui.resolve(e)
-      paneFrames = frames.map(f => cells(f).cells)
-      const first = cells(frames[0]!)
+      paneScene = scene
+      const first = cells(compose(scene, Date.now() - started))
       return (
         <Box flexDirection="column" gap={1}>
           <Raster key="habitat" columns={first.columns} rows={first.rows} cells={first.cells} />
@@ -542,7 +672,7 @@ export const register: Register = on => {
       const { Svg } = $.ui.resolve(e)
       return (
         <Box flexDirection="column" gap={1}>
-          <Svg source={framesSvg(frames, 7)} alt={`${p.name} in its habitat`} />
+          <Svg source={sceneSvg(scene, 7)} alt={`${p.name} in its habitat`} />
           {header}
           {tabs}
           {body}
@@ -559,7 +689,7 @@ export const register: Register = on => {
   })
 
   on('ui.close', { id: PANE }, ($, e, next) => {
-    paneFrames = []
+    paneScene = null
     return next(e)
   }).catch(($, e, next) => next(e))
 

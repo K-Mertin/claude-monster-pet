@@ -1,8 +1,8 @@
 // The monster and the rules that raise it. Pure: events in, a new pet out.
 
-import type { Event, Hat, Item, Line, Personality, Pet, Skill, Stage, Variant } from '../types'
+import type { Boss, BossKind, Decor, Event, Hat, Item, Legend, Line, Personality, Pet, Secret, Skill, Stage, Variant } from '../types'
 
-export type { Event, Hat, Item, Line, Personality, Pet, Skill, Stage, Variant }
+export type { Boss, BossKind, Decor, Event, Hat, Item, Legend, Line, Personality, Pet, Secret, Skill, Stage, Variant }
 
 export const HOUR = 3600_000
 const MIN = 60_000
@@ -44,12 +44,19 @@ export function normalize(raw: Partial<Pet>): Pet {
     traits: { shell: 0, code: 0, agents: 0, web: 0, ...raw.traits },
     stats: {
       tokens: 0, tests: 0, commits: 0, pushes: 0, tasks: 0, errors: 0, fed: 0, meals: 0, played: 0, pats: 0,
-      talks: 0, games: 0, wins: 0, trained: 0, cleaned: 0, agents: 0, ...raw.stats,
+      talks: 0, games: 0, wins: 0, trained: 0, cleaned: 0, agents: 0, bossWins: 0, bossTries: 0, ...raw.stats,
     },
     cooldowns: { ...raw.cooldowns },
     mood: raw.mood,
     said: raw.said,
     settings: { sound: false, alerts: true, ...raw.settings },
+    week: raw.week ?? { id: '', errors: 0, testFails: 0 },
+    boss: raw.boss ?? null,
+    secret: raw.secret ?? null,
+    ultimateAt: raw.ultimateAt,
+    generation: raw.generation ?? 1,
+    hall: raw.hall ?? [],
+    decor: raw.decor ?? [],
     alerted: { ...raw.alerted },
     log: raw.log ?? [],
   }
@@ -119,6 +126,11 @@ export const BADGES: Badge[] = [
   { id: 'tokens1m', name: 'Big eater', what: 'Eat a million tokens', earned: p => p.stats.tokens >= 1_000_000 },
   { id: 'clean5', name: 'Tidy', what: 'Clean up 5 times', earned: p => p.stats.cleaned >= 5 },
   { id: 'talk20', name: 'Chatterbox', what: 'Talk with it 20 times', earned: p => p.stats.talks >= 20 },
+  { id: 'boss1', name: 'Bug squasher', what: 'Defeat a weekly Bug Boss', earned: p => p.stats.bossWins >= 1 },
+  { id: 'boss5', name: 'Exterminator', what: 'Defeat 5 weekly Bug Bosses', earned: p => p.stats.bossWins >= 5 },
+  { id: 'secret', name: 'Hidden path', what: 'Reach a secret form', earned: p => p.secret !== null },
+  { id: 'decor4', name: 'Home sweet home', what: 'Own 4 decorations', earned: p => p.decor.length >= 4 },
+  { id: 'legacy', name: 'Legacy', what: 'Retire a monster to the Hall of Fame', earned: p => p.hall.length > 0 },
 ]
 
 function topLine(p: Pet): Line {
@@ -128,7 +140,20 @@ function topLine(p: Pet): Line {
   return ranked[0]![0]
 }
 
+export const SECRET_NAMES: Record<Secret, [string, string]> = {
+  archivist: ['Archivist', 'High Archivist'],
+  bugslayer: ['Bugslayer', 'Bug Sovereign'],
+  goldheart: ['Goldheart', 'Sunheart'],
+}
+
+export const DECOR: Record<Decor, { name: string; cost: number }> = {
+  plant: { name: 'Potted plant', cost: 1 }, lamp: { name: 'Lamp', cost: 1 }, poster: { name: 'Poster', cost: 1 },
+  rug: { name: 'Rug', cost: 2 }, bed: { name: 'Bed', cost: 2 }, toybox: { name: 'Toy box', cost: 2 },
+  desk: { name: 'Desk and laptop', cost: 3 }, fountain: { name: 'Fountain', cost: 4 },
+}
+
 export function formName(p: Pet): string {
+  if (p.secret && (p.stage === 'adult' || p.stage === 'ultimate')) return SECRET_NAMES[p.secret][p.stage === 'adult' ? 0 : 1]
   if (!p.line || !p.variant || (p.stage !== 'adult' && p.stage !== 'ultimate')) return p.stage
   return FORM_NAMES[p.line][p.variant][p.stage === 'adult' ? 0 : 1]
 }
@@ -179,6 +204,7 @@ function grow(p: Pet, at: number) {
         p.variant = avg >= 55 && p.stress < 60 ? 'bright' : 'shadow'
       }
       p.stage = s.stage
+      if (s.stage === 'ultimate') p.ultimateAt = at
       const what = s.stage === 'baby' ? `${p.name} hatched!` : `${p.name} evolved into ${article(formName(p))}${p.line && s.stage === 'child' ? ` (${LINE_NAMES[p.line]} line)` : ''}!`
       note(p, at, what)
       p.mood = { kind: 'evolve', until: at + 8000 }
@@ -212,7 +238,36 @@ function streak(p: Pet, at: number) {
   } else if (days > 1) note(p, at, `Day ${days} together. A cookie for you.`)
 }
 
+/** The ISO week of a time, e.g. 2026-W41. */
+export function weekOf(at: number) {
+  const d = new Date(at)
+  const day = (d.getDay() + 6) % 7
+  d.setHours(0, 0, 0, 0)
+  d.setDate(d.getDate() - day + 3)
+  const firstThursday = new Date(d.getFullYear(), 0, 4)
+  const week = 1 + Math.round(((d.getTime() - firstThursday.getTime()) / 86400000 - 3 + ((firstThursday.getDay() + 6) % 7)) / 7)
+  return `${d.getFullYear()}-W${String(week).padStart(2, '0')}`
+}
+
+export const BOSS_NAMES: Record<BossKind, string> = {
+  imp: 'Lint Imp', golem: 'Stacktrace Golem', hydra: 'Flaky Hydra', kraken: 'Regression Kraken',
+}
+
+/** A boss shaped by a week's failures: more failures, a tougher boss. */
+export function makeBoss(week: string, errors: number, testFails: number): Boss {
+  const kind: BossKind = errors >= 15 ? 'kraken' : testFails >= 3 && testFails * 2 >= errors ? 'hydra' : errors >= 5 ? 'golem' : 'imp'
+  return { week, kind, name: BOSS_NAMES[kind], hp: Math.min(220, 40 + errors * 4), atk: 6 + Math.min(14, Math.floor(errors / 3)), beaten: false, tries: 0 }
+}
+
+function rollWeek(p: Pet, at: number) {
+  const id = weekOf(at)
+  if (p.week.id === id) return
+  p.boss = makeBoss(id, p.week.errors, p.week.testFails)
+  p.week = { id, errors: 0, testFails: 0 }
+}
+
 function active(p: Pet, at: number) {
+  rollWeek(p, at)
   p.lastActive = at
   p.care = { sum: p.care.sum + p.joy, n: p.care.n + 1 }
   streak(p, at)
@@ -245,6 +300,7 @@ export function apply(prev: Pet, e: Event): Pet {
       if (e.failed) {
         p.stress = clamp(p.stress + 3)
         p.stats.errors += 1
+        p.week = { ...p.week, errors: p.week.errors + 1 }
         p.mood = { kind: 'ouch', until: e.at + 4000 }
       } else if ((e.ms ?? 0) > 60_000) {
         p.mood = { kind: 'sweat', until: e.at + 4000 }
@@ -254,6 +310,7 @@ export function apply(prev: Pet, e: Event): Pet {
         if (e.failed) {
           p.stress = clamp(p.stress + 5)
           p.stats.lastTestFailed = true
+          p.week = { ...p.week, testFails: p.week.testFails + 1 }
         } else {
           p.joy = clamp(p.joy + 8)
           p.xp += 5
@@ -417,6 +474,39 @@ export function apply(prev: Pet, e: Event): Pet {
       if (e.hat === null || p.hats.includes(e.hat)) p.hat = e.hat
       break
     }
+    case 'boss': {
+      if (!p.boss || p.boss.beaten) break
+      p.boss = { ...p.boss, tries: p.boss.tries + 1 }
+      p.stats.bossTries += 1
+      p.energy = clamp(p.energy - 15)
+      if (e.won) {
+        p.boss = { ...p.boss, beaten: true }
+        p.stats.bossWins += 1
+        give(p, 'gem', 3)
+        p.xp += 30
+        p.joy = clamp(p.joy + 15)
+        p.mood = { kind: 'win', until: e.at + 6000 }
+        note(p, e.at, `${p.name} defeated the ${p.boss.name}! +3 gems, +30 xp.`)
+      } else {
+        p.joy = clamp(p.joy - 5)
+        p.mood = { kind: 'lose', until: e.at + 5000 }
+        note(p, e.at, `The ${p.boss.name} won this time.`)
+      }
+      break
+    }
+    case 'buy': {
+      const d = DECOR[e.decor]
+      if (!d || p.decor.includes(e.decor) || p.items.gem < d.cost) break
+      p.items = { ...p.items, gem: p.items.gem - d.cost }
+      p.decor = [...p.decor, e.decor]
+      p.mood = { kind: 'cheer', until: e.at + 4000 }
+      note(p, e.at, `New for the habitat: ${d.name.toLowerCase()}.`)
+      break
+    }
+    case 'retire': {
+      if (!canRetire(p, e.at)) break
+      return retire(p, e.at)
+    }
     case 'setting': {
       p.settings = { ...p.settings, [e.key]: e.on }
       break
@@ -433,8 +523,49 @@ export function apply(prev: Pet, e: Event): Pet {
     p.mood ??= { kind: 'cheer', until: e.at + 4000 }
   }
   grow(p, e.at)
+  secrets(p, e.at)
   badges(p, e.at)
   return p
+}
+
+function secretFor(p: Pet): Secret | null {
+  if (p.stats.bossWins >= 3) return 'bugslayer'
+  if (p.streak.days >= 30) return 'goldheart'
+  if (p.line === 'scribe' && p.skills.wisdom >= 50) return 'archivist'
+  return null
+}
+
+function secrets(p: Pet, at: number) {
+  if (p.secret || (p.stage !== 'adult' && p.stage !== 'ultimate')) return
+  const s = secretFor(p)
+  if (!s) return
+  p.secret = s
+  p.mood = { kind: 'evolve', until: at + 8000 }
+  note(p, at, `${p.name} took a hidden path and became ${article(formName(p))}!`)
+}
+
+export const RETIRE_AFTER = 30 * 24 * HOUR
+
+export function canRetire(p: Pet, now: number) {
+  return p.stage === 'ultimate' && p.ultimateAt !== undefined && now - p.ultimateAt >= RETIRE_AFTER
+}
+
+/** The monster joins the Hall of Fame; a new egg keeps your treasures and a head start. */
+function retire(p: Pet, at: number): Pet {
+  const legend: Legend = {
+    name: p.name, form: formName(p), level: level(p.xp), days: Math.floor((at - p.born) / (24 * HOUR)), generation: p.generation, retiredAt: at,
+  }
+  const best = (Object.keys(p.skills) as Skill[]).sort((a, b) => p.skills[b] - p.skills[a])[0]!
+  const egg = hatch(at, p.name, p.personality)
+  return normalize({
+    ...egg,
+    generation: p.generation + 1,
+    hall: [...p.hall, legend],
+    items: p.items, hats: p.hats, hat: p.hat, badges: [...p.badges, ...(p.badges.includes('legacy') ? [] : ['legacy'])],
+    decor: p.decor, settings: p.settings, streak: p.streak, week: p.week, boss: p.boss,
+    skills: { power: 0, wisdom: 0, speed: 0, [best]: Math.floor(p.skills[best] * 0.25) },
+    log: [{ at, text: `${legend.name} retired to the Hall of Fame. A new egg appeared: generation ${p.generation + 1}.` }],
+  })
 }
 
 function meal(p: Pet) {

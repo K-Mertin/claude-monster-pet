@@ -1,7 +1,8 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 import { applyAll, decay, face, hatch, level, HOUR } from '../hooks/pet'
-import { cells, cropAll, framesSvg, habitatFrames, petFrames } from '../hooks/render'
+import { habitatFrames } from '../hooks/habitat'
+import { cells, cropAll, framesSvg, petFrames } from '../hooks/render'
 
 const T0 = 1_000_000
 
@@ -72,7 +73,7 @@ test('every stage and line draws, in frames of one size, in both renderers', () 
 })
 
 import { talkLine } from '../hooks/lines'
-import { formName, normalize } from '../hooks/pet'
+import { formName, normalize, type Pet } from '../hooks/pet'
 
 test('work earns items: tests give cookies, a fixed failure a bug snack, commits gems, tokens coffee', () => {
   let p = hatch(T0)
@@ -122,7 +123,7 @@ test('badges unlock hats, and only unlocked hats can be worn', () => {
 })
 
 test('training raises a skill, faster on its line, then needs rest', () => {
-  let p = { ...hatch(T0), line: 'scribe' as const }
+  let p: Pet = { ...hatch(T0), line: 'scribe' }
   p = applyAll(p, [{ kind: 'train', skill: 'wisdom', at: T0 }], T0)
   expect(p.skills.wisdom).toBe(5)
   p = applyAll(p, [{ kind: 'train', skill: 'power', at: T0 + 1000 }], T0 + 1000)
@@ -204,7 +205,7 @@ test('a treat hunt can be played by typing', async ($, on) => {
   const start = await $.command.run(typed('hunt'))
   expect(start.text).toContain('Round 1/3')
   let last = ''
-  for (let i = 0; i < 3; i++) last = (await $.command.run(typed('hunt middle'))).text
+  for (let i = 0; i < 3; i++) last = (await $.command.run(typed('hunt middle'))).text ?? ''
   expect(last).toMatch(/Won|Found \d\/3/)
   const again = await $.command.run(typed('hunt'))
   expect(again.text).toContain('resting')
@@ -217,4 +218,68 @@ test('typed commands say what happened', async ($, on) => {
   expect(r.text).toContain('Nothing to clean yet')
   const h = await $.command.run(typed('hat wizard'))
   expect(h.text).toContain("hasn't unlocked")
+})
+
+import { canFight, move, startBattle } from '../hooks/boss'
+import { compose, habitat, sceneSvg, weatherOf } from '../hooks/habitat'
+import { canRetire, makeBoss, RETIRE_AFTER } from '../hooks/pet'
+
+test('each week brings a boss shaped by the last week’s failures', () => {
+  expect(makeBoss('w', 0, 0).kind).toBe('imp')
+  expect(makeBoss('w', 6, 1).kind).toBe('golem')
+  expect(makeBoss('w', 6, 4).kind).toBe('hydra')
+  expect(makeBoss('w', 20, 2).kind).toBe('kraken')
+  let p = applyAll(hatch(T0), [{ kind: 'tool', tool: 'Bash', command: 'ls', failed: true, at: T0 }], T0)
+  p = applyAll(p, [{ kind: 'tokens', n: 1, at: T0 + 8 * 24 * HOUR }], T0 + 8 * 24 * HOUR)
+  expect(p.boss?.hp).toBe(44)
+})
+
+test('a child can beat a boss by using its weaknesses, and is rewarded once', () => {
+  let n = 7
+  const rnd = () => ((n = (n * 16807) % 2147483647) / 2147483647)
+  let p = applyAll(hatch(T0), [{ kind: 'tokens', n: 1, at: T0 }], T0)
+  expect(canFight(p)).not.toBeNull()
+  p = { ...p, stage: 'child', line: 'forge', xp: 200, skills: { power: 20, wisdom: 5, speed: 5 }, energy: 90 }
+  expect(canFight(p)).toBeNull()
+  let b = startBattle(p, p.boss!, rnd)
+  for (let i = 0; i < 40 && !b.over; i++) b = move(b, p, p.boss!, b.weak, rnd)
+  expect(b.over).toBe('won')
+  p = applyAll(p, [{ kind: 'boss', won: true, at: T0 + 1 }, { kind: 'boss', won: true, at: T0 + 2 }], T0 + 2)
+  expect(p.stats.bossWins).toBe(1)
+  expect(p.badges).toContain('boss1')
+})
+
+test('gems buy decorations once each', () => {
+  let p = { ...hatch(T0), items: { ...hatch(T0).items, gem: 5 } }
+  p = applyAll(p, [{ kind: 'buy', decor: 'desk', at: T0 }, { kind: 'buy', decor: 'desk', at: T0 + 1 }, { kind: 'buy', decor: 'fountain', at: T0 + 2 }], T0 + 2)
+  expect(p.decor).toEqual(['desk'])
+  expect(p.items.gem).toBe(2)
+})
+
+test('an extreme habit unlocks a secret form', () => {
+  const p = applyAll({ ...hatch(T0), stage: 'adult', line: 'scribe', variant: 'bright', skills: { power: 0, wisdom: 50, speed: 0 } }, [{ kind: 'pet', at: T0 }], T0)
+  expect(p.secret).toBe('archivist')
+  expect(formName(p)).toBe('Archivist')
+})
+
+test('an ultimate retires after 30 days and the next egg keeps the treasures', () => {
+  const u = { ...hatch(T0), stage: 'ultimate' as const, line: 'forge' as const, variant: 'bright' as const, ultimateAt: T0, xp: 4000, decor: ['bed' as const], skills: { power: 40, wisdom: 0, speed: 0 } }
+  expect(canRetire(u, T0 + 1000)).toBe(false)
+  const r = applyAll(u, [{ kind: 'retire', at: T0 + RETIRE_AFTER }], T0 + RETIRE_AFTER)
+  expect(r.stage).toBe('egg')
+  expect(r.generation).toBe(2)
+  expect(r.hall[0]?.form).toBe('Solforge')
+  expect(r.skills.power).toBe(10)
+  expect(r.decor).toEqual(['bed'])
+})
+
+test('the habitat draws every season, weather, holiday and a boss within limits', () => {
+  for (const month of [1, 4, 7, 10, 12]) {
+    const at = new Date(2026, month - 1, month === 12 ? 24 : 10, 12).getTime()
+    expect(weatherOf(at)).toMatch(/clear|cloudy|rain|snow|petals|leaves/)
+    const p = { ...hatch(at - 86400000), stage: 'adult' as const, line: 'summoner' as const, variant: 'shadow' as const, decor: ['plant', 'lamp', 'poster', 'rug', 'bed', 'toybox', 'desk', 'fountain'] as never }
+    const scene = habitat(p, at, 12, { boss: { kind: 'kraken', hit: true } })
+    expect(compose(scene, 1234).px.length).toBe(72 * 40)
+    expect(sceneSvg(scene, 7).length).toBeLessThan(131072)
+  }
 })

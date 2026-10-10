@@ -15,13 +15,27 @@ Answer `y` to add the marketplace, then pick a scope. The egg appears above your
 ## Use
 
 - The band above the prompt shows your monster with its food, joy, energy and XP, plus what it is up to.
-- `/pet` opens its habitat, with five tabs:
-  - **Home**: Feed, Play, Pat, Talk, Clean (after meals it makes a mess), Tuck in (it sleeps and recovers)
+- The band has ♥ (pat) and 💬 (talk) buttons.
+- `/pet` opens its habitat, where it strolls about under the season's weather. Six tabs:
+  - **Home**: Feed, Play, Pat, Talk, Clean (after meals it makes a mess), Tuck in (it sleeps and recovers), sound and alert toggles
   - **Items**: treats earned from your work, each with its own effect
-  - **Games**: a three-round treat hunt with prizes, and training for Power, Wisdom and Speed
+  - **Games**: the weekly Bug Boss, a three-round treat hunt with prizes, and training for Power, Wisdom and Speed
+  - **Shop**: spend gems on decorations for the habitat
   - **Style**: hats unlocked by badges
-  - **Badges**: 18 achievements, each announced with a toast
-- Commands: `/pet feed|play|talk|clean|tuck`, `/pet use cookie|coffee|gem|bug`, `/pet train power|wisdom|speed`, `/pet hat <hat>|none`, `/pet name <name>`, `/pet hide|show`
+  - **Badges**: 23 achievements, each announced with a toast, and the Hall of Fame
+- Commands: `/pet feed|play|talk|clean|tuck`, `/pet hunt [left|middle|right]`, `/pet boss [strike|outsmart|dodge]`, `/pet use cookie|coffee|gem|bug`, `/pet train power|wisdom|speed`, `/pet buy <decoration>`, `/pet hat <hat>|none`, `/pet retire`, `/pet name <name>`, `/pet sound on|off`, `/pet alerts on|off`, `/pet hide|show`
+
+## The weekly Bug Boss
+
+Each week a boss forms from your previous week's failures: a Lint Imp after a clean week, a Stacktrace Golem after broken commands, a Flaky Hydra after failing tests, a Regression Kraken after a rough week. Fight it turn by turn with Strike (Power), Outsmart (Wisdom) and Dodge (Speed); each turn it shows which move hits hard. Beat it for 3 gems, 30 xp and a badge. From the child stage on.
+
+## Secret forms and generations
+
+Extreme habits unlock hidden forms: **Archivist** (a Scribe with 50 Wisdom), **Bugslayer** (3 bosses beaten), **Goldheart** (a 30-day streak). After 30 days as an ultimate your monster can retire to the Hall of Fame; the next egg keeps your badges, hats, items and decorations, and inherits a head start in its best skill.
+
+## The habitat
+
+Seasons and daily weather follow your calendar (blossoms, sun, falling leaves, rain, snow), with Halloween pumpkins, a Christmas tree, New Year fireworks and a cake on its birthday. Gems buy a flower pot, lantern, sign, picnic rug, bed, toy box, desk with a laptop and a fountain. It naps in its bed if it has one.
 
 ## How it grows
 
