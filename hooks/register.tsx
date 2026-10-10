@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, Timer } from 'claude-code'
+import type { EngineInterface, Register, RenderElement, Timer } from 'claude-code'
 
 import { talkLine } from './lines'
 import {
@@ -8,6 +8,7 @@ import {
   type Decor, type Event, type Hat, type Item, type Pet, type Skill,
 } from './pet'
 import { MOVES, canFight, move, skillOf, startBattle, type Battle } from './boss'
+import { card, dnaCode, pngBase64 } from './card'
 import { describe, extOf } from './dna'
 import { compose, habitat, sceneSvg, type Scene } from './habitat'
 import { FRAME_MS, cells, cropAll, framesSvg, petFrames } from './render'
@@ -170,6 +171,34 @@ async function retireNow($: EngineInterface): Promise<string> {
 const WEATHER_ICON = { clear: '☀', cloudy: '☁', rain: '🌧', snow: '❄', petals: '🌸', leaves: '🍂' } as const
 const HOLIDAY_NAME: Record<string, string> = { birthday: '🎂 birthday!', halloween: '🎃 Halloween', christmas: '🎄 Christmas', newyear: '🎆 New Year' }
 
+/** Draws the card and saves it as a PNG beside the pet's file, then opens it. */
+async function makeCard($: EngineInterface): Promise<string> {
+  const p = await load($)
+  const dir = file ? file.replace(/\/pet\.json$/, '') : ''
+  if (!dir) return `Your card's DNA code: ${dnaCode(p)}`
+  const b64 = `${dir}/card.b64`
+  const png = `${dir}/card.png`
+  await $.fs.write(b64, pngBase64(card(p, Date.now()), 3))
+  const decoders = [
+    ['base64', '-D', '-i', b64, '-o', png],
+    ['python3', '-c', 'import base64,sys;open(sys.argv[2],"wb").write(base64.b64decode(open(sys.argv[1]).read()))', b64, png],
+  ]
+  let saved = false
+  for (const argv of decoders) {
+    try {
+      if ((await $.process.run(argv)).exitCode === 0) {
+        saved = true
+        break
+      }
+    } catch {}
+  }
+  if (!saved) return `Couldn't write the PNG. Your DNA code: ${dnaCode(p)}`
+  try {
+    await $.process.run(['open', png])
+  } catch {}
+  return `Card saved to ${png} · DNA ${dnaCode(p)}`
+}
+
 /** A number from who you are: a hash of your git email (or your home folder). The email is never stored. */
 async function seed($: EngineInterface, home: string | undefined) {
   let id = ''
@@ -287,6 +316,7 @@ async function petCommand($: EngineInterface, args: string): Promise<{ text: str
     return { text: d ? await buy($, d) : `Buy what? ${(Object.keys(DECOR) as Decor[]).map(k => `${k} (${DECOR[k].cost}💎)`).join(', ')}` }
   }
   if (verb === 'retire') return { text: await retireNow($) }
+  if (verb === 'card') return { text: await makeCard($) }
   if (verb === 'hunt') {
     const b = BUSHES.indexOf(arg as (typeof BUSHES)[number])
     const text = !arg ? await huntStart($) : b < 0 ? 'Pick left, middle or right.' : await huntPick($, b, true)
@@ -329,7 +359,7 @@ export const register: Register = on => {
     await $.command.register({
       name: 'pet',
       description: 'See and care for your monster',
-      argumentHint: '[feed|play|talk|clean|tuck|hunt [bush]|boss [move]|buy <decor>|retire|use <item>|train <skill>|hat <hat>|name <name>|sound on|off|alerts on|off|hide|show]',
+      argumentHint: '[card|feed|play|talk|clean|tuck|hunt [bush]|boss [move]|buy <decor>|retire|use <item>|train <skill>|hat <hat>|name <name>|sound on|off|alerts on|off|hide|show]',
     })
     void seed($, home)
     ticker?.cancel()
@@ -453,6 +483,11 @@ export const register: Register = on => {
     const now = await $.clock.now()
     const tab = (await read($, tabAtom)) as Tab
     const hunt = await read($, huntAtom)
+    let preview: RenderElement | null = null
+    if (e.surface === 'desktop' && tab === 'style') {
+      const { Svg } = $.ui.resolve(e)
+      preview = <Svg source={framesSvg([card(p, now)], 2)} alt={`${p.name}'s card`} />
+    }
     const battle = await read($, battleAtom)
     const fighting = battle && p.boss && tab === 'games' ? { kind: p.boss.kind, hit: !battle.over && now - lastMoveAt < 1200 } : null
     const scene = habitat(p, now, new Date(now).getHours(), { hunt: tab === 'games' && !battle ? hunt : null, boss: fighting })
@@ -613,6 +648,14 @@ export const register: Register = on => {
                 <Text key={`dna-${i}`}>{line}</Text>
               ))}
               <Text dimColor>Only counts are kept: languages by file extension, active hours, commit sizes, test results, and a hash of your git email. No paths, code or messages.</Text>
+            </Box>
+            <Box flexDirection="column">
+              <Text color="#FFCD75" bold>Card</Text>
+              {preview}
+              <Box flexDirection="row" gap={1}>
+                <Button key="card" label="Save card as PNG" hotkey="k" onPress={async () => { $.ui.toast(await makeCard($)) }} />
+                <Text dimColor>DNA {dnaCode(p)}</Text>
+              </Box>
             </Box>
             <Text color="#FFCD75" bold>Hats</Text>
             <Box flexDirection="row" gap={1} flexWrap="wrap">

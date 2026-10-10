@@ -364,3 +364,37 @@ test('every DNA combination draws within limits', () => {
     expect(dnaLines(p).length).toBeGreaterThanOrEqual(7)
   }
 })
+
+import { CARD_H, CARD_W, card, dnaCode, pngBase64, readCode } from '../hooks/card'
+
+test('a DNA code reads back to the same traits', () => {
+  const p = applyAll(hatch(T0), [{ kind: 'seed', value: 4_000_000_123, at: T0 }, ...edits('rs', 30), ...edits('go', 10, T0 + 100)], T0 + 200)
+  const grown = { ...p, stage: 'adult' as const, line: 'forge' as const, variant: 'shadow' as const }
+  const code = dnaCode(grown)
+  expect(code).toMatch(/^BYTE-[0-9A-Z]{5}-[0-9A-Z]{4}-[0-9A-Z]{4}$/)
+  const back = readCode(code)!
+  expect(back.name).toBe('BYTE')
+  expect(back.fields.seed).toBe(4_000_000_123)
+  expect(back.fields.lang1).toBe('Rust')
+  expect(back.fields.lang2).toBe('Go')
+  expect(back.fields.stage).toBe('adult')
+  expect(back.fields.variant).toBe('shadow')
+  expect(readCode('not a code')).toBeNull()
+})
+
+test('the card draws at its size and saves as a palette PNG', () => {
+  const p = applyAll(hatch(T0), [...edits('ts', 20), ...edits('css', 5, T0 + 50)], T0 + 100)
+  const c = card({ ...p, stage: 'child', line: 'wanderer' }, T0 + 100)
+  expect(c.w).toBe(CARD_W)
+  expect(c.h).toBe(CARD_H)
+  const b64 = pngBase64(c, 3)
+  expect(b64.startsWith('iVBORw0KGgo')).toBe(true) // the PNG signature
+  expect(framesSvg([c], 2).length).toBeLessThan(131072)
+})
+
+test('without a home folder, /pet card answers with the DNA code', async ($, on) => {
+  mock.clock(on)
+  mock.store(on)
+  const r = await $.command.run(typed('card'))
+  expect(r.text).toMatch(/DNA code: BYTE-/)
+})

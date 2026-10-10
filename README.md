@@ -25,7 +25,7 @@ Answer `y` to add the marketplace, then pick a scope. The egg appears above your
   - **Shop**: spend gems on decorations for the habitat
   - **Style**: hats unlocked by badges
   - **Badges**: 23 achievements, each announced with a toast, and the Hall of Fame
-- Commands: `/pet feed|play|talk|clean|tuck`, `/pet hunt [left|middle|right]`, `/pet boss [strike|outsmart|dodge]`, `/pet use cookie|coffee|gem|bug`, `/pet train power|wisdom|speed`, `/pet buy <decoration>`, `/pet hat <hat>|none`, `/pet retire`, `/pet name <name>`, `/pet sound on|off`, `/pet alerts on|off`, `/pet hide|show`
+- Commands: `/pet card`, `/pet feed|play|talk|clean|tuck`, `/pet hunt [left|middle|right]`, `/pet boss [strike|outsmart|dodge]`, `/pet use cookie|coffee|gem|bug`, `/pet train power|wisdom|speed`, `/pet buy <decoration>`, `/pet hat <hat>|none`, `/pet retire`, `/pet name <name>`, `/pet sound on|off`, `/pet alerts on|off`, `/pet hide|show`
 
 ## Your monster's DNA
 
@@ -45,6 +45,14 @@ From the child stage on, your habits draw your monster, so no two look alike, ev
 | Who you are (a hash of your git email) | Its exact tint, pattern style and placement, horn length, and a one-in-256 chance of a shiny gold colouring |
 
 The Style tab explains each trait and where it came from. Only counts are kept: languages by extension, active hours, commit sizes and test results, plus a hash of your git email. No file paths, code, messages or the email itself.
+
+## Share your card
+
+`/pet card` saves a pixel card of your monster as `~/.claude/monster/card.png` and opens it: its form, languages, habits, record and a DNA code. The Style tab shows a preview.
+
+![A card for Byte, a level 11 Emberkin: a blue striped Forge monster, TypeScript 75%, CSS 18%, Shell 8%, armoured, with its DNA code](docs/card.png)
+
+The DNA code (like `BYTE-00B43-QW2E-8835`) holds its seed and traits, so a future version can bring a friend's monster to visit.
 
 ## Hats
 
