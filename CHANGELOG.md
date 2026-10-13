@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.7.3
+- A compact `/pet` pane in the terminal: the habitat without most of its sky (14 rows instead of 20, never wider than the pane), a two-line header, and a shorter log. It now opens 24 rows tall instead of 40. The desktop is unchanged.
+
 ## 0.7.2
 - MIT license.
 - README: verified install commands, how to check it loaded, how to update, platform notes, and exactly what the mod accesses.

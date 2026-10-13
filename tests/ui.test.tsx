@@ -24,7 +24,13 @@ for (const surface of ['terminal', 'desktop'] as const) {
     mock.store(on)
     await $.command.run(typed('talk'))
     const pane = await $.ui.mount({ plugin: 'monster', surface, ...PANE })
-    expect(await pane.find({ type: 'Text', text: /Next up:/ })).toBeDefined()
+    expect(await pane.find({ type: 'Text', text: /Next up:|💬/ })).toBeDefined()
+    if (surface === 'terminal') {
+      // Compact in the terminal: the habitat is at most 14 rows and fits the pane's width.
+      const habitat = await pane.find({ key: 'habitat' })
+      expect(Number(habitat?.props.rows)).toBeLessThanOrEqual(14)
+      expect(Number(habitat?.props.columns)).toBeLessThanOrEqual(118)
+    }
     expect(await pane.find({ type: 'Text', text: /Quests 1\/7/ })).toBeDefined()
     await pane.press({ key: 'tab-items' })
     expect(await pane.find({ key: 'use-cookie' })).toBeDefined()

@@ -10,7 +10,8 @@ import {
 import { MOVES, canFight, move, skillOf, startBattle, type Battle } from './boss'
 import { card, dnaCode, pngBase64, readCode } from './card'
 import { describe, extOf } from './dna'
-import { compose, habitat, sceneSvg, type Scene } from './habitat'
+import { HAB_H, HAB_W, compose, habitat, sceneSvg, type Scene } from './habitat'
+import type { Sprite } from './art'
 import { FRAME_MS, cells, cropAll, framesSvg, petFrames } from './render'
 
 const PANE = 'monster'
@@ -349,6 +350,20 @@ const HELP = [
   'Setup:   /pet name <name> · sound on|off · alerts on|off · hide|show · tour [skip]',
 ].join('\n')
 
+// ── The terminal shows the habitat without most of its sky, and no wider than the pane.
+type View = { x: number; y: number; w: number; h: number }
+
+function viewOf(columns: number): View {
+  const w = Math.min(HAB_W, Math.max(40, columns - 2))
+  return { x: Math.floor((HAB_W - w) / 2), y: 12, w, h: HAB_H - 12 }
+}
+
+function crop(s: Sprite, v: View): Sprite {
+  const px: (number | null)[] = []
+  for (let y = v.y; y < v.y + v.h; y++) for (let x = v.x; x < v.x + v.w; x++) px.push(s.px[y * s.w + x] ?? null)
+  return { w: v.w, h: v.h, px }
+}
+
 const PRIZES: Item[] = ['cookie', 'cookie', 'cookie', 'coffee', 'coffee', 'gem']
 
 async function petCommand($: EngineInterface, args: string): Promise<{ text: string }> {
@@ -396,7 +411,7 @@ async function petCommand($: EngineInterface, args: string): Promise<{ text: str
   }
   await flush($)
   const p = await read($, petAtom)
-  if (!verb) await $.ui.open({ id: PANE, title: p ? p.name : 'Monster', rows: 40 })
+  if (!verb) await $.ui.open({ id: PANE, title: p ? p.name : 'Monster', rows: 24 })
   if (!p) return { text: 'Your monster is on its way.' }
   return { text: `${title(p)} — ${reply(verb, arg, before, p, now) ?? status(p, now)}` }
 }
@@ -407,6 +422,7 @@ export const register: Register = on => {
   let frame = 0
   let bandFrames: string[] = []
   let paneScene: Scene | null = null
+  let paneView = viewOf(80)
   const started = Date.now()
   let bandId = ''
 
@@ -427,7 +443,7 @@ export const register: Register = on => {
       frame++
       const b = bandFrames[frame % Math.max(1, bandFrames.length)]
       if (b && bandId) void $.ui.blit({ requestId: bandId, key: 'pet', cells: b })
-      if (paneScene) void $.ui.blit({ requestId: PANE, key: 'habitat', cells: cells(compose(paneScene, Date.now() - started)).cells })
+      if (paneScene) void $.ui.blit({ requestId: PANE, key: 'habitat', cells: cells(crop(compose(paneScene, Date.now() - started), paneView)).cells })
     })
     void flush($)
     return next(e)
@@ -561,7 +577,18 @@ export const register: Register = on => {
     const scene = habitat(p, now, new Date(now).getHours(), { hunt: tab === 'games' && !battle ? hunt : null, boss: fighting })
     const lv = level(p.xp)
 
-    const header = (
+    const compact = e.surface === 'terminal'
+    const header = compact ? (
+      <Box flexDirection="column">
+        <Text color="#FFCD75" bold>
+          {title(p)} · {p.personality}{p.streak.days > 1 ? ` · 🔥${p.streak.days}` : ''}{isAsleep(p, now) ? ' · asleep' : ''}{isSick(p) ? ' · sick' : ''} <Text dimColor>{WEATHER_ICON[scene.weather]} {scene.season}{scene.holiday ? ` · ${HOLIDAY_NAME[scene.holiday]}` : ''}</Text>
+        </Text>
+        <Text>
+          <Text color="#EF7D57">food {bar(p.hunger, 6)}</Text> <Text color="#A7F070">joy {bar(p.joy, 6)}</Text> <Text color="#FFCD75">nrg {bar(p.energy, 6)}</Text> <Text color="#E24B4A">stress {bar(p.stress, 6)}</Text> <Text color="#73EFF7">xp {Math.floor(p.xp)}/{xpFor(lv + 1)}</Text>
+        </Text>
+        <Text color="#73EFF7">{said(p, now) ? `💬 “${said(p, now)}”` : `▸ Next up: ${nextUp(p, now)}`}</Text>
+      </Box>
+    ) : (
       <Box flexDirection="column">
         <Text color="#FFCD75" bold>
           {title(p)} · {p.personality} · {age(p, now)} old{p.streak.days > 1 ? ` · 🔥 ${p.streak.days}-day streak` : ''}
@@ -794,7 +821,7 @@ export const register: Register = on => {
             Quests {p.quests.length}/{QUESTS.length}: {QUESTS.map(q => `${p.quests.includes(q.id) ? '✓' : '○'} ${q.what}`).join(' · ')}
           </Text>
           <Box flexDirection="column">
-            {p.log.slice(-5).reverse().map((l, i) => (
+            {p.log.slice(compact ? -3 : -5).reverse().map((l, i) => (
               <Text key={`log-${i}`} color="#94B0C2">· {l.text}</Text>
             ))}
           </Box>
@@ -805,9 +832,10 @@ export const register: Register = on => {
     if (e.surface === 'terminal') {
       const { Raster } = $.ui.resolve(e)
       paneScene = scene
-      const first = cells(compose(scene, Date.now() - started))
+      paneView = viewOf(e.props.bodyColumns || e.viewport?.columns || 80)
+      const first = cells(crop(compose(scene, Date.now() - started), paneView))
       return (
-        <Box flexDirection="column" gap={1}>
+        <Box flexDirection="column">
           <Raster key="habitat" columns={first.columns} rows={first.rows} cells={first.cells} />
           {header}
           {tabs}
