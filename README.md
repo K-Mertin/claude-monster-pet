@@ -6,13 +6,20 @@ A Claude Code mod that hatches a pixel-art digital monster and raises it from yo
 
 ## Install
 
-In a Claude Code terminal session (Claude Code 2.1.287 or later):
+Requires Claude Code 2.1.287 or later with mods allowed (an organization can turn them off). Check your version with `claude --version`.
+
+From your shell:
 
 ```
-/plugin install monster --marketplace K-Mertin/claude-monster-pet
+claude plugin marketplace add K-Mertin/claude-monster-pet
+claude plugin install monster@claude-monster-pet
 ```
 
-Answer `y` to add the marketplace, then pick a scope. The egg appears above your prompt.
+Or, at the prompt of a terminal session: `/plugin install monster --marketplace K-Mertin/claude-monster-pet`, then `y` to add the marketplace and pick a scope.
+
+If a session is already open, run `/reload-plugins` in it; new sessions load it on their own. To check it loaded, run `/plugin`: the line under the tabs should name `monster` among the active mods, and an egg appears above your prompt.
+
+To update later: `claude plugin update monster@claude-monster-pet`, then `/reload-plugins`.
 
 ## Use
 
@@ -113,6 +120,21 @@ How well you care for it decides whether its adult form is bright or shadow. Eac
 
 There is one monster per machine, shared by every session, saved in `~/.claude/monster/pet.json`. The mod makes no model calls and no network requests.
 
+## Platforms
+
+Everything works on macOS. On Linux and Windows the monster, habitat and games work the same, but sounds stay silent (they play through `afplay`), and `/pet card` saves the PNG (using `python3`) without opening it.
+
+## What it accesses
+
+A mod runs inside Claude Code with your permissions, so here is everything this one touches:
+
+- **Your sessions:** it watches Claude's tool calls and token usage to feed and shape the monster, keeping only counts: file extensions, active hours, commit sizes and test results. Never file paths, code, prompts or messages.
+- **Files:** it reads and writes `~/.claude/monster/` (`pet.json`, and `card.png` when you make a card).
+- **Commands:** once per session `git config --global user.email`, of which it keeps only a hash; `afplay` for sounds (off by default); `open`, `base64` or `python3` for the card.
+- **Nothing else:** no network requests and no model calls.
+
+To see this for yourself before installing, clone the repo and run `claude plugin validate .`: it lists every event the mod hooks and every call it makes.
+
 ## Develop
 
 ```
@@ -120,3 +142,7 @@ claude --plugin-dir .
 claude plugin validate .
 claude plugin test .
 ```
+
+## License
+
+[MIT](LICENSE)

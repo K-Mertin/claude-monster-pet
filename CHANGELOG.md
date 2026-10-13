@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.2
+- MIT license.
+- README: verified install commands, how to check it loaded, how to update, platform notes, and exactly what the mod accesses.
+
 ## 0.7.1
 - Feeding, playing, talking and other care now wake a tucked-in monster (a little grumpy) and count as you being around.
 - A Wake up button and `/pet wake` end a tuck-in early.

@@ -1,10 +1,11 @@
 {
   "name": "monster",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "Raise a digital monster that grows from your Claude Code work",
   "author": {
     "name": "K-Mertin"
   },
   "types": "./types/index.d.ts",
-  "repository": "https://github.com/K-Mertin/claude-monster-pet"
+  "repository": "https://github.com/K-Mertin/claude-monster-pet",
+  "license": "MIT"
 }
