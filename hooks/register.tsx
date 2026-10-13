@@ -12,7 +12,7 @@ import { card, dnaCode, pngBase64, readCode } from './card'
 import { describe, extOf } from './dna'
 import { HAB_H, HAB_W, compose, habitat, sceneSvg, type Scene } from './habitat'
 import type { Sprite } from './art'
-import { FRAME_MS, cells, cropAll, framesSvg, petFrames } from './render'
+import { FRAME_MS, cells, cropAll, framesSvg, halfAll, petFrames } from './render'
 
 const PANE = 'monster'
 const FLUSH_MS = 5000
@@ -510,8 +510,8 @@ export const register: Register = on => {
       <Box flexDirection="column">
         <Text color="#FFCD75" bold>{title(p)}{p.streak.days > 1 ? ` · 🔥${p.streak.days}` : ''}</Text>
         <Text>
-          <Text color="#EF7D57">food {bar(p.hunger)}</Text> <Text color="#A7F070">joy {bar(p.joy)}</Text>{' '}
-          <Text color="#FFCD75">nrg {bar(p.energy, 5)}</Text> <Text color="#73EFF7">xp {bar(xpPct(p))}</Text>
+          <Text color="#EF7D57">food {bar(p.hunger, 6)}</Text> <Text color="#A7F070">joy {bar(p.joy, 6)}</Text>{' '}
+          <Text color="#FFCD75">nrg {bar(p.energy, 5)}</Text> <Text color="#73EFF7">xp {bar(xpPct(p), 6)}</Text>
           {isSick(p) && <Text color="#E24B4A"> sick</Text>}
         </Text>
         <Box flexDirection="row" gap={1}>
@@ -533,9 +533,11 @@ export const register: Register = on => {
     )
     if (e.surface === 'terminal') {
       const { Raster } = $.ui.resolve(e)
-      bandFrames = frames.map(f => cells(f).cells)
+      // Half size in the terminal, so the band stays a few rows tall.
+      const small = cropAll(halfAll(frames))
+      bandFrames = small.map(f => cells(f).cells)
       bandId = e.requestId
-      const first = cells(frames[0]!)
+      const first = cells(small[0]!)
       return (
         <Box flexDirection="row" gap={1}>
           <Raster key="pet" columns={first.columns} rows={first.rows} cells={first.cells} />

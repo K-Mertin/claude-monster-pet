@@ -13,6 +13,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await $.command.run(typed('talk'))
     const band = await $.ui.mount({ plugin: 'monster', surface, ...BAND })
     expect(await band.find({ type: 'Text', text: /Byte · Lv/ })).toBeDefined()
+    if (surface === 'terminal') expect(Number((await band.find({ key: 'pet' }))?.props.rows)).toBeLessThanOrEqual(6)
     expect(await band.find({ type: 'Text', text: /Tip 1\/6/ })).toBeDefined()
     await band.press({ key: 'band-skip' })
     expect(await band.find({ type: 'Text', text: /Tip 1\/6/ })).toBeUndefined()

@@ -1,7 +1,8 @@
 # Changelog
 
 ## 0.7.3
-- A compact `/pet` pane in the terminal: the habitat without most of its sky (14 rows instead of 20, never wider than the pane), a two-line header, and a shorter log. It now opens 24 rows tall instead of 40. The desktop is unchanged.
+- A compact `/pet` pane in the terminal: the habitat without most of its sky (14 rows instead of 20, never wider than the pane), a two-line header, and a shorter log. It now opens 24 rows tall instead of 40.
+- A smaller band above the prompt in the terminal: the monster is drawn at half size (4 to 6 rows instead of 7 to 11), keeping its face. The desktop is unchanged.
 
 ## 0.7.2
 - MIT license.

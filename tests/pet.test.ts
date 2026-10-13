@@ -528,3 +528,15 @@ test('the status says how long a tucked-in monster sleeps', async ($, on) => {
   expect((await $.command.run(typed('wake'))).text).toContain('Good morning')
   expect((await $.command.run(typed('wake'))).text).toContain('already awake')
 })
+
+import { halfAll } from '../hooks/render'
+
+test('the terminal band sprite is at most 6 rows for every stage and line', () => {
+  for (const stage of ['egg', 'baby', 'child', 'adult', 'ultimate'] as const) {
+    for (const line of ['forge', 'scribe', 'summoner', 'wanderer'] as const) {
+      const small = cropAll(halfAll(cropAll(petFrames({ ...hatch(T0), stage, line, variant: 'bright', hat: 'wizard' }, T0))))
+      expect(new Set(small.map(f => `${f.w}x${f.h}`)).size).toBe(1)
+      expect(cells(small[0]!).rows).toBeLessThanOrEqual(6)
+    }
+  }
+})

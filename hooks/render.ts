@@ -1,6 +1,6 @@
 // Turns the pet into animation frames, and frames into an SVG (desktop) or cells (terminal).
 
-import { SIZE, monster, type Pose, type Rgb, type Sprite } from './art'
+import { INK, SIZE, monster, type Pose, type Rgb, type Sprite } from './art'
 import { dnaFromCode, dnaOf } from './dna'
 import { face, type Face, type Pet, type VisitorDna } from './pet'
 
@@ -91,6 +91,61 @@ function mirror(s: Sprite): Sprite {
   const px: (Rgb | null)[] = []
   for (let y = 0; y < s.h; y++) for (let x = s.w - 1; x >= 0; x--) px.push(s.px[y * s.w + x] ?? null)
   return { w: s.w, h: s.h, px }
+}
+
+/** Half size: each 2×2 block becomes its most common colour, with dark lines (eyes, mouth, outline) favoured so the face survives. */
+export function half(s: Sprite, ox = 0, oy = 0): Sprite {
+  const w = Math.ceil((s.w + ox) / 2)
+  const h = Math.ceil((s.h + oy) / 2)
+  const at = (x: number, y: number) => (x >= 0 && y >= 0 && x < s.w && y < s.h ? s.px[y * s.w + x] ?? null : null)
+  const px: (Rgb | null)[] = []
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const count = new Map<Rgb, number>()
+      let filled = 0
+      for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]] as const) {
+        const c = at(2 * x + dx - ox, 2 * y + dy - oy)
+        if (c === null) continue
+        filled++
+        count.set(c, (count.get(c) ?? 0) + (c === INK ? 1.5 : 1))
+      }
+      if (filled < 2) {
+        px.push(null)
+        continue
+      }
+      let best: Rgb | null = null
+      let most = 0
+      for (const [c, n] of count) if (n > most) [best, most] = [c, n]
+      px.push(best)
+    }
+  }
+  return { w, h, px }
+}
+
+/** Dark pixels with colour on both sides: eyes and mouth, what a face needs to read. */
+function faceScore(s: Sprite) {
+  let n = 0
+  for (let y = 0; y < s.h; y++) {
+    for (let x = 1; x < s.w - 1; x++) {
+      const l = s.px[y * s.w + x - 1]
+      const r = s.px[y * s.w + x + 1]
+      if (s.px[y * s.w + x] === INK && l !== null && l !== INK && r !== null && r !== INK) n++
+    }
+  }
+  return n
+}
+
+/** Halves every frame on the same 2×2 grid, the one that keeps the most of the face. */
+export function halfAll(frames: Sprite[]): Sprite[] {
+  const first = frames[0]
+  if (!first) return frames
+  let best: [number, number] = [0, 0]
+  let score = -1
+  for (const ox of [0, 1]) for (const oy of [0, 1]) {
+    const n = faceScore(half(first, ox, oy))
+    if (n > score) [best, score] = [[ox, oy], n]
+  }
+  return frames.map(f => half(f, best[0], best[1]))
 }
 
 /** One box around every frame's pixels, so frames crop alike; height even for half blocks. */
