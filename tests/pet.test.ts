@@ -540,3 +540,16 @@ test('the terminal band sprite is at most 6 rows for every stage and line', () =
     }
   }
 })
+
+test('/pet close closes the habitat pane', async ($, on) => {
+  mock.clock(on)
+  mock.store(on)
+  const closed: string[] = []
+  on('ui.close', async ($, e) => {
+    closed.push(e.id)
+    return { value: undefined } as never
+  })
+  const r = await $.command.run(typed('close'))
+  expect(closed).toEqual(['monster'])
+  expect(r.text).toMatch(/closed/)
+})

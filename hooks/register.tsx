@@ -347,7 +347,7 @@ const HELP = [
   'Play:    /pet hunt [left|middle|right] · boss [strike|outsmart|dodge] · train <power|wisdom|speed>',
   'Collect: /pet buy <decoration> · hat <hat|none> · retire (after 30 days as an ultimate)',
   'Share:   /pet card (a PNG with its DNA code) · visit [<code>|play|spar|bye]',
-  'Setup:   /pet name <name> · sound on|off · alerts on|off · hide|show · tour [skip]',
+  'Setup:   /pet name <name> · sound on|off · alerts on|off · hide|show · close · tour [skip]',
 ].join('\n')
 
 // ── The terminal shows the habitat without most of its sky, and no wider than the pane.
@@ -383,6 +383,10 @@ async function petCommand($: EngineInterface, args: string): Promise<{ text: str
   if (verb === 'retire') return { text: await retireNow($) }
   if (verb === 'card') return { text: await makeCard($) }
   if (verb === 'help') return { text: HELP }
+  if (verb === 'close') {
+    await $.ui.close({ id: PANE })
+    return { text: 'Habitat closed. /pet opens it again.' }
+  }
   if (verb === 'visit') return { text: await visit($, rest.join(' ')) }
   if (verb === 'tour') {
     await act($, { kind: 'tour', action: arg === 'skip' ? 'skip' : 'restart', at: Date.now() })
@@ -432,7 +436,7 @@ export const register: Register = on => {
     await $.command.register({
       name: 'pet',
       description: 'See and care for your monster',
-      argumentHint: '[help|card|visit <code>|feed|play|talk|clean|tuck|wake|hunt [bush]|boss [move]|buy <decor>|retire|use <item>|train <skill>|hat <hat>|name <name>|sound on|off|alerts on|off|hide|show]',
+      argumentHint: '[help|card|visit <code>|feed|play|talk|clean|tuck|wake|hunt [bush]|boss [move]|buy <decor>|retire|use <item>|train <skill>|hat <hat>|name <name>|sound on|off|alerts on|off|hide|show|close]',
     })
     void seed($, home)
     ticker?.cancel()

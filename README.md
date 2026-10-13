@@ -33,7 +33,7 @@ To update later: `claude plugin update monster@claude-monster-pet`, then `/reloa
   - **Style**: hats unlocked by badges
   - **Badges**: 23 achievements, each announced with a toast, and the Hall of Fame
 - New here? Tips appear above your prompt, the habitat shows what to do **next**, and `/pet help` lists every command.
-- Commands: `/pet help`, `/pet card`, `/pet visit [<code>|play|spar|bye]`, `/pet feed|play|talk|clean|tuck`, `/pet hunt [left|middle|right]`, `/pet boss [strike|outsmart|dodge]`, `/pet use cookie|coffee|gem|bug`, `/pet train power|wisdom|speed`, `/pet buy <decoration>`, `/pet hat <hat>|none`, `/pet retire`, `/pet name <name>`, `/pet sound on|off`, `/pet alerts on|off`, `/pet hide|show`
+- Commands: `/pet help`, `/pet card`, `/pet visit [<code>|play|spar|bye]`, `/pet feed|play|talk|clean|tuck`, `/pet hunt [left|middle|right]`, `/pet boss [strike|outsmart|dodge]`, `/pet use cookie|coffee|gem|bug`, `/pet train power|wisdom|speed`, `/pet buy <decoration>`, `/pet hat <hat>|none`, `/pet retire`, `/pet name <name>`, `/pet sound on|off`, `/pet alerts on|off`, `/pet hide|show`, `/pet close` (closes the habitat pane)
 
 ## Your monster's DNA
 
